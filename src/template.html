@@ -29,7 +29,8 @@ h1 span{color:var(--accent)}
 .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
 .field{display:flex;flex-direction:column;gap:3px;min-width:0}
 .field label,.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
-select,input[type=date]{font:500 14px var(--data);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-height:34px}
+select,input[type=date],input[type=number]{font:500 14px var(--data);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-height:34px}
+input[type=number]{width:90px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font:600 13px var(--data);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
@@ -182,10 +183,12 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <div class="controls" style="margin-top:12px">
         <div class="field"><label for="site">Site</label>
           <select id="site"><option value="1">Team A at home</option><option value="0">Neutral</option><option value="-1">Team B at home</option></select></div>
+        <div class="field"><label for="mktA">Market % (A)</label><input type="number" id="mktA" min="0" max="100" step="1" placeholder="e.g. 82"></div>
+        <div class="field"><label for="mktB">Market % (B)</label><input type="number" id="mktB" min="0" max="100" step="1" placeholder="e.g. 18"></div>
       </div>
       <div class="result" id="mres"></div>
     </div>
-    <p class="note">Uses the ratings from your current filters, so a "last 4 weeks" matchup projects off recent form.</p>
+    <p class="note">Uses the ratings from your current filters, so a "last 4 weeks" matchup projects off recent form. Enter a sportsbook or market price for either team to see the edge against this model.</p>
   </section>
 
   <section id="p-about" hidden>
@@ -371,12 +374,22 @@ function renderMatchup(){
   const fav = margin>=0?A:B, m = Math.abs(margin);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
     return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
+  const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
+  const edge = (modelPct, mkt) => isNaN(mkt) ? '' :
+    `<div>vs market: <b style="color:${modelPct-mkt>=0?'var(--good)':'var(--bad)'}">${modelPct-mkt>=0?'+':''}${(modelPct-mkt).toFixed(1)} pts</b></div>`;
+  const edgeHtml = (isNaN(mA) && isNaN(mB)) ? '' : `
+    <div class="note" style="margin-top:6px;display:flex;gap:24px">
+      <div><b>${esc(A.abbr)}</b> model ${(pA*100).toFixed(1)}%${edge(pA*100, mA)}</div>
+      <div><b>${esc(B.abbr)}</b> model ${((1-pA)*100).toFixed(1)}%${edge((1-pA)*100, mB)}</div>
+    </div>
+    <p class="note">Edge is this model's win probability minus the market's for the same side. Positive means the model likes that side more than the market does, which is where a bet would have value if the model is right.</p>`;
   $('mres').innerHTML = `
     <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}</div>
     <div class="bar" role="img" aria-label="Win probability ${esc(A.name)} ${(pA*100).toFixed(0)} percent">
       <div style="width:${pA*100}%;background:${A.color}">${pA>=0.12?esc(A.abbr)+' '+(pA*100).toFixed(0)+'%':''}</div>
       <div style="width:${(1-pA)*100}%;background:${B.color};justify-content:flex-end">${pA<=0.88?esc(B.abbr)+' '+((1-pA)*100).toFixed(0)+'%':''}</div>
     </div>
+    ${edgeHtml}
     <div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l"></th><th>${esc(A.abbr)}</th><th>${esc(B.abbr)}</th></tr></thead><tbody>
       ${row('Rating',A.rating,B.rating,x=>f1(x))}
       ${row('Adj Off EPA/play',A.adjO,B.adjO,f3)}
@@ -507,6 +520,7 @@ for (const id of ['from','to']) $(id).addEventListener('change', e=>{
 $('conf').addEventListener('change', e=>{ state.conf=e.target.value; renderTable(); save(); });
 $('prior').addEventListener('change', e=>{ state.prior=e.target.checked; refresh(); save(); });
 for (const id of ['ta','tb','site']) $(id).addEventListener('change', renderMatchup);
+for (const id of ['mktA','mktB']) $(id).addEventListener('input', renderMatchup);
 document.querySelector('#rt thead').addEventListener('click', e=>{ const th=e.target.closest('th'); if(!th) return; sortBy(th.dataset.k); });
 document.querySelector('#rt thead').addEventListener('keydown', e=>{ if(e.key==='Enter'){ const th=e.target.closest('th'); if(th) sortBy(th.dataset.k); }});
 function sortBy(k){
