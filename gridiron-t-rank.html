@@ -405,7 +405,7 @@ function renderMatchup(){
       ${row('Adj points allowed',A.ptsD,B.ptsD,x=>x.toFixed(1),true)}
       ${row('Turnover margin / game',A.tom,B.tom,f1)}
     </tbody></table></div>
-    <p class="note">Win probability assumes the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
+    <p class="note">The percentages above are the chance of winning outright, not of the game landing near the projected margin or score, those are two different questions. Win probability assumes the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
 }
 function renderAbout(){
   const t = DATA.backtest.test, B = P.beta;
@@ -483,7 +483,7 @@ function renderGames(){
     const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
-      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span>${Math.round(wp*100)}% to win</span>`}
+      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning outright, not of matching this projected margin or score">${Math.round(wp*100)}% to win outright</span>`}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
   }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
   $('gnote').textContent = list.some(g=>g[6]===null)
