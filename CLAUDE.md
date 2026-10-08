@@ -55,6 +55,8 @@ Out of sample (2025 and 2026 through Oct 7): average miss 12.62 points, picks 73
 
 Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA, adding explosiveness (EPA per successful, turnover-free play) as a fourth rating input. Explosiveness still shows as a display column (`EX` in `FEATS`), its signal is just already inside EPA per play, so it moved test MAE by under 0.01 points.
 
+Checked whether the model's miss size varies by anything, to see if win probability should use a variable standard deviation instead of one flat number. Bucketing by projected margin size: no, std stays flat at 16 to 17 points whether the favorite is up by 2 or up by 35. Bucketing by how many games each team has played so far that season: yes, games where neither team has played yet (pure preseason prior, no in season data) miss by more, std 17.4 vs 16.3, and the prediction is biased too, about 3 points too generous to the favorite on average. `sd_early` in `site_data.json` params captures the std difference; the bias itself is not corrected, that is really the same preseason info gap below, not a separate problem.
+
 ## The page
 
 `src/template.html` holds all the UI and the browser math. The browser re-solves every ridge regression live (Cholesky) whenever the date range changes, so any range from 2004 to today works, including ranges that cross seasons. The JS solver was verified to match the Python one to two decimals.
