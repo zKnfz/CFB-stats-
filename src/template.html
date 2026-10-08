@@ -53,6 +53,8 @@ tbody tr.team:hover td{background:var(--accent-soft)}
 td.rk{color:var(--muted);width:2.5em}
 td.tm{font-weight:600;font-family:var(--body)}
 .sw{display:inline-block;width:4px;height:14px;border-radius:1px;vertical-align:-2px;margin-right:7px}
+.tmlink{cursor:pointer}
+.tmlink:hover,.tmlink:focus-visible{text-decoration:underline}
 .r{font-size:11px;color:var(--muted);margin-left:4px;display:inline-block;min-width:2.2em;text-align:left}
 .rk2{font-size:11px;color:var(--muted)}
 .cell{display:inline-block;padding:1px 5px;border-radius:3px}
@@ -488,9 +490,12 @@ function renderGames(){
       }
     }
     const rk = id => current && current.byId.get(id) ? `<span class="rk2">${current.byId.get(id).ratingRk}</span> ` : '';
-    const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+    const tline = (id,opp,sc,other,isHome)=>{
+      const siteVal = neu?0:(isHome?1:-1);
+      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}" tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+    };
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
-      <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
+      <div class="teams">${tline(a,h,as,hs,false)}${tline(h,a,hs,as,true)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
       <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning by at least half the projected margin">${Math.round(wp*100)}% to win by ${cushion.toFixed(1)}+</span>`}
         ${mingp===0?'<span class="ln" title="Neither team has played yet this season, so this leans entirely on last season\'s rating. Wider uncertainty band than usual.">Preseason pick</span>':''}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
@@ -504,6 +509,17 @@ $('dprev').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i>0) 
 $('dnext').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i<GDATES.length-1) goDay(GDATES[i+1]); });
 $('dtoday').addEventListener('click',()=>goDay(nearestDate(todayET())));
 $('dpick').addEventListener('change',e=>{ if(e.target.value) goDay(nearestDate(e.target.value)); });
+function goToMatchup(a, opp, siteVal, date){
+  state.season = seasonOf(date); state.open = null;
+  applyPreset('all'); syncControls(); refresh();
+  $('ta').value = a; $('ta').dataset.init = 1; $('tb').value = opp; $('site').value = siteVal;
+  renderMatchup(); save();
+  for (const t of ['ratings','games','matchup','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+}
+$('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return;
+  goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date); });
+$('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return;
+  goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date); });
 
 // ---------- controls ----------
 function seasonBounds(){
