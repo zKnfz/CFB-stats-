@@ -184,6 +184,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <div class="controls" style="margin-top:12px">
         <div class="field"><label for="site">Site</label>
           <select id="site"><option value="1">Team A at home</option><option value="0">Neutral</option><option value="-1">Team B at home</option></select></div>
+        <div class="field"><label for="wbSel">Win by at least</label>
+          <select id="wbSel"><option value="0">Any (straight up)</option><option value="3">3</option><option value="7">7</option><option value="10">10</option><option value="14">14</option><option value="17">17</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="34">34</option><option value="41">41</option></select></div>
         <div class="field"><label for="mktA">Market % (A)</label><input type="number" id="mktA" min="0" max="100" step="1" placeholder="e.g. 82"></div>
         <div class="field"><label for="mktB">Market % (B)</label><input type="number" id="mktB" min="0" max="100" step="1" placeholder="e.g. 18"></div>
       </div>
@@ -375,7 +377,7 @@ function renderMatchup(){
   const fav = margin>=0?A:B, dog = margin>=0?B:A, m = Math.abs(margin);
   const total = (A.ptsO+B.ptsD)/2 + (B.ptsO+A.ptsD)/2;
   const favScore = Math.round((total+m)/2), dogScore = Math.round((total-m)/2);
-  const cushion = m/2, pCush = normCdf(cushion/P.sd);
+  const wb = +$('wbSel').value, pWb = normCdf((m-wb)/P.sd);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
     return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
   const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
@@ -388,12 +390,13 @@ function renderMatchup(){
     </div>
     <p class="note">Edge is this model's win probability minus the market's for the same side. Positive means the model likes that side more than the market does, which is where a bet would have value if the model is right.</p>`;
   $('mres').innerHTML = `
-    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}, projected ${favScore}-${dogScore} <span style="font-size:0.6em;color:var(--muted)">(${Math.round(pCush*100)}% to win by ${cushion.toFixed(1)}+)</span></div>
+    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}, projected ${favScore}-${dogScore}</div>
     <div class="bar" role="img" aria-label="Win probability ${esc(A.name)} ${(pA*100).toFixed(0)} percent">
       <div style="width:${pA*100}%;background:${A.color}">${pA>=0.12?esc(A.abbr)+' '+(pA*100).toFixed(0)+'%':''}</div>
       <div style="width:${(1-pA)*100}%;background:${B.color};justify-content:flex-end">${pA<=0.88?esc(B.abbr)+' '+((1-pA)*100).toFixed(0)+'%':''}</div>
     </div>
-    <p class="note">The bar above is straight up win probability. The percent next to the headline is tied to the margin itself: the chance of winning by at least half the projected margin.</p>
+    <p class="note">Bar above is straight up win probability (margin above 0). Pick a margin below to see the chance of clearing that instead.</p>
+    <div class="headline" style="font-size:0.85em">${esc(fav.abbr)} to win by ${wb}+: <b>${(pWb*100).toFixed(1)}%</b></div>
     ${edgeHtml}
     <div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l"></th><th>${esc(A.abbr)}</th><th>${esc(B.abbr)}</th></tr></thead><tbody>
       ${row('Rating',A.rating,B.rating,x=>f1(x))}
@@ -534,7 +537,7 @@ for (const id of ['from','to']) $(id).addEventListener('change', e=>{
   state.preset=null; syncControls(); refresh(); });
 $('conf').addEventListener('change', e=>{ state.conf=e.target.value; renderTable(); save(); });
 $('prior').addEventListener('change', e=>{ state.prior=e.target.checked; refresh(); save(); });
-for (const id of ['ta','tb','site']) $(id).addEventListener('change', renderMatchup);
+for (const id of ['ta','tb','site','wbSel']) $(id).addEventListener('change', renderMatchup);
 for (const id of ['mktA','mktB']) $(id).addEventListener('input', renderMatchup);
 document.querySelector('#rt thead').addEventListener('click', e=>{ const th=e.target.closest('th'); if(!th) return; sortBy(th.dataset.k); });
 document.querySelector('#rt thead').addEventListener('keydown', e=>{ if(e.key==='Enter'){ const th=e.target.closest('th'); if(th) sortBy(th.dataset.k); }});
