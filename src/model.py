@@ -6,6 +6,7 @@ import numpy as np, pandas as pd
 D = pickle.load(open(DATA_DIR + "/prep.pkl", "rb"))
 FEATS = {  # name: (numerator col, weight col)
     "E": ("epa", "plays"), "NT": ("epa_nt", "plays_nt"), "SR": ("succ", "plays"), "PTS": ("pts", "one"),
+    "EX": ("ex_nt", "plays_ex"),  # explosiveness: EPA per successful, turnover-free play
 }
 
 
@@ -36,7 +37,7 @@ def ridge(r, ids, num, wcol, lam, prior=None, decay_w=None):
     return x[:n], x[n:2 * n], x[2 * n], x[2 * n + 1]
 
 
-LAMS = {"E": 100, "NT": 100, "SR": 100, "PTS": 3}
+LAMS = {"E": 100, "NT": 100, "SR": 100, "PTS": 3, "EX": 150}
 
 
 def final_prior(year, ids, shrink):

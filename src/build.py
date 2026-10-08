@@ -37,12 +37,14 @@ def load_season(year):
     p["is_pass"] = (p["pass"] == True)
     p["tov"] = (p.turnover_vec.astype(float) > 0)
     p["epa_nt"] = np.where(p.tov, np.nan, p.EPA)
+    p["ex_nt"] = np.where((p.succ == 1) & ~p.tov, p.EPA, np.nan)  # explosiveness: EPA on turnover-free successes
     p["pos_team_id"] = p.pos_team_id.astype(int)
     p["def_pos_team_id"] = p.def_pos_team_id.astype(int)
 
     agg = p.groupby(["game_id", "pos_team_id", "def_pos_team_id"]).agg(
         plays=("EPA", "size"), epa=("EPA", "sum"), succ=("succ", "sum"),
         pplays=("is_pass", "sum"), tov=("tov", "sum"), epa_nt=("epa_nt", "sum"), plays_nt=("epa_nt", "count"),
+        ex_nt=("ex_nt", "sum"), plays_ex=("ex_nt", "count"),
         pepa=("EPA", lambda s: s[p.loc[s.index, "is_pass"]].sum())).reset_index()
     agg["rplays"] = agg.plays - agg.pplays
     agg["repa"] = agg.epa - agg.pepa
