@@ -375,6 +375,7 @@ function renderMatchup(){
   const fav = margin>=0?A:B, dog = margin>=0?B:A, m = Math.abs(margin);
   const total = (A.ptsO+B.ptsD)/2 + (B.ptsO+A.ptsD)/2;
   const favScore = Math.round((total+m)/2), dogScore = Math.round((total-m)/2);
+  const cushion = m/2, pCush = normCdf(cushion/P.sd);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
     return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
   const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
@@ -387,11 +388,12 @@ function renderMatchup(){
     </div>
     <p class="note">Edge is this model's win probability minus the market's for the same side. Positive means the model likes that side more than the market does, which is where a bet would have value if the model is right.</p>`;
   $('mres').innerHTML = `
-    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}, projected ${favScore}-${dogScore}</div>
+    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}, projected ${favScore}-${dogScore} <span style="font-size:0.6em;color:var(--muted)">(${Math.round(pCush*100)}% to win by ${cushion.toFixed(1)}+)</span></div>
     <div class="bar" role="img" aria-label="Win probability ${esc(A.name)} ${(pA*100).toFixed(0)} percent">
       <div style="width:${pA*100}%;background:${A.color}">${pA>=0.12?esc(A.abbr)+' '+(pA*100).toFixed(0)+'%':''}</div>
       <div style="width:${(1-pA)*100}%;background:${B.color};justify-content:flex-end">${pA<=0.88?esc(B.abbr)+' '+((1-pA)*100).toFixed(0)+'%':''}</div>
     </div>
+    <p class="note">The bar above is straight up win probability. The percent next to the headline is tied to the margin itself: the chance of winning by at least half the projected margin.</p>
     ${edgeHtml}
     <div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l"></th><th>${esc(A.abbr)}</th><th>${esc(B.abbr)}</th></tr></thead><tbody>
       ${row('Rating',A.rating,B.rating,x=>f1(x))}
@@ -405,7 +407,7 @@ function renderMatchup(){
       ${row('Adj points allowed',A.ptsD,B.ptsD,x=>x.toFixed(1),true)}
       ${row('Turnover margin / game',A.tom,B.tom,f1)}
     </tbody></table></div>
-    <p class="note">The percentages above are the chance of winning outright, not of the game landing near the projected margin or score, those are two different questions. Win probability assumes the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
+    <p class="note">Both percentages assume the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
 }
 function renderAbout(){
   const t = DATA.backtest.test, B = P.beta;
@@ -465,7 +467,8 @@ function renderGames(){
   $('glist').innerHTML = list.length ? list.map(g=>{
     const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, done = hs!==null;
     const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a), dog = pred===null?null:(favH?a:h);
-    const wp = pred===null?null:normCdf(Math.abs(pred)/P.sd);
+    const cushion = pred===null?null:Math.abs(pred)/2;
+    const wp = pred===null?null:normCdf(cushion/P.sd);
     const line = veg===null||veg===0 ? (veg===0?'Line: PK':'') : `Line: ${esc(ab(veg>0?h:a))} −${Math.abs(veg).toFixed(1)}`;
     let badge = '<span class="badge up">Upcoming</span>';
     if (done && pred!==null && hs!==as) badge = ((pred>0)===(hs>as)) ? '<span class="badge ok">✓ Correct</span>' : '<span class="badge no">✗ Missed</span>';
@@ -483,7 +486,7 @@ function renderGames(){
     const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
-      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning outright, not of matching this projected margin or score">${Math.round(wp*100)}% to win outright</span>`}
+      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning by at least half the projected margin">${Math.round(wp*100)}% to win by ${cushion.toFixed(1)}+</span>`}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
   }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
   $('gnote').textContent = list.some(g=>g[6]===null)
