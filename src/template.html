@@ -373,11 +373,12 @@ function renderMatchup(){
   const A = byId.get(+$('ta').value), B = byId.get(+$('tb').value), site = +$('site').value;
   if (A===B){ $('mres').innerHTML='<p class="note">Pick two different teams.</p>'; return; }
   const margin = (A.rating-B.rating) + P.hfa*site;
-  const pA = normCdf(margin/P.sd);
+  const sd = (A.gp===0 || B.gp===0) ? P.sd_early : P.sd;
+  const pA = normCdf(margin/sd);
   const fav = margin>=0?A:B, dog = margin>=0?B:A, m = Math.abs(margin);
   const total = (A.ptsO+B.ptsD)/2 + (B.ptsO+A.ptsD)/2;
   const favScore = Math.round((total+m)/2), dogScore = Math.round((total-m)/2);
-  const wb = +$('wbSel').value, pWb = normCdf((m-wb)/P.sd);
+  const wb = +$('wbSel').value, pWb = normCdf((m-wb)/sd);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
     return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
   const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
@@ -410,7 +411,7 @@ function renderMatchup(){
       ${row('Adj points allowed',A.ptsD,B.ptsD,x=>x.toFixed(1),true)}
       ${row('Turnover margin / game',A.tom,B.tom,f1)}
     </tbody></table></div>
-    <p class="note">Both percentages assume the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
+    <p class="note">${sd===P.sd_early?`${esc(A.gp===0?A.abbr:B.abbr)} hasn't played in this range yet, so this leans entirely on a carried over prior. `:''}Both percentages assume the final margin lands within a normal spread of ${sd.toFixed(1)} points around the projection${sd===P.sd_early?', wider than the usual '+P.sd.toFixed(1)+' since preseason picks miss by more':''}. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
 }
 function renderAbout(){
   const t = DATA.backtest.test, B = P.beta;
@@ -468,10 +469,11 @@ function renderGames(){
     (up ? `<span><b>${up}</b> game${up>1?'s':''} still to play</span>` : '') +
     (sr.n ? `<span>${seasonOf(gday)} season: model <b>${sr.w}-${sr.l}</b>${pctS(sr.w,sr.l)}, Vegas <b>${sr.vw}-${sr.vl}</b>${pctS(sr.vw,sr.vl)}</span>` : '');
   $('glist').innerHTML = list.length ? list.map(g=>{
-    const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, done = hs!==null;
+    const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp] = g, done = hs!==null;
     const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a), dog = pred===null?null:(favH?a:h);
+    const sd = mingp===0 ? P.sd_early : P.sd;
     const cushion = pred===null?null:Math.abs(pred)/2;
-    const wp = pred===null?null:normCdf(cushion/P.sd);
+    const wp = pred===null?null:normCdf(cushion/sd);
     const line = veg===null||veg===0 ? (veg===0?'Line: PK':'') : `Line: ${esc(ab(veg>0?h:a))} −${Math.abs(veg).toFixed(1)}`;
     let badge = '<span class="badge up">Upcoming</span>';
     if (done && pred!==null && hs!==as) badge = ((pred>0)===(hs>as)) ? '<span class="badge ok">✓ Correct</span>' : '<span class="badge no">✗ Missed</span>';
@@ -490,6 +492,7 @@ function renderGames(){
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
       <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning by at least half the projected margin">${Math.round(wp*100)}% to win by ${cushion.toFixed(1)}+</span>`}
+        ${mingp===0?'<span class="ln" title="Neither team has played yet this season, so this leans entirely on last season\'s rating. Wider uncertainty band than usual.">Preseason pick</span>':''}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
   }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
   $('gnote').textContent = list.some(g=>g[6]===null)

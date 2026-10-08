@@ -11,13 +11,18 @@ def et(ts):
 games = []
 for y in range(2004, 2027):
     sc = pd.read_parquet(f"{DATA_DIR}/sched_{y}.parquet").set_index('game_id')
-    for g in D[y][1].itertuples():
+    played = {}
+    for g in D[y][1].sort_values('date').itertuples():
+        hp, ap = played.get(g.home_id, 0), played.get(g.away_id, 0)
+        mingp = min(hp, ap)
         d, tm = et(sc.loc[g.game_id, 'game_date'])
         pred = None
         if g.game_id in pre.index:
             p = pre.loc[g.game_id]; pred = round(float(sum(B[f]*p[f] for f in MF) + H*p['home']), 2)
         v = None if pd.isna(g.home_spread_margin) else float(g.home_spread_margin)
-        games.append([int(g.game_id), d, tm, int(g.home_id), int(g.away_id), bool(g.neutral_site), int(g.home_score), int(g.away_score), pred, v])
+        games.append([int(g.game_id), d, tm, int(g.home_id), int(g.away_id), bool(g.neutral_site), int(g.home_score), int(g.away_score), pred, v, mingp])
+        played[g.home_id], played[g.away_id] = hp + 1, ap + 1
+    if y == 2026: played_2026 = played
 # upcoming 2026: current ratings, prior on
 y = 2026; ids = sorted(D[y][2].team_id); pri = final_prior(y, ids, 0.9); r = R[y]
 rate = np.zeros(len(ids))
@@ -32,7 +37,8 @@ for g in up.itertuples():
     d, tm = et(g.start_date)
     if g.start_time_tbd: tm = ''
     pred = round(float(rt[hi] - rt[ai] + (0 if g.neutral_site else H)), 2)
-    games.append([gid, d, tm, hi, ai, bool(g.neutral_site), None, None, pred, None]); n_up += 1
+    mingp = min(played_2026.get(hi, 0), played_2026.get(ai, 0))
+    games.append([gid, d, tm, hi, ai, bool(g.neutral_site), None, None, pred, None, mingp]); n_up += 1
 games.sort(key=lambda x: (x[1], x[2] == '', pd.to_datetime(x[2], format='%I:%M %p').time() if x[2] else 0))
 site['games'] = games; site['asof'] = pd.Timestamp.now(tz='America/New_York').strftime('%Y-%m-%d')
 json.dump(site, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))

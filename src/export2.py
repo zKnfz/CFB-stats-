@@ -9,6 +9,18 @@ tr = bt[bt.year<=2024]
 X = np.c_[tr[MF], tr.home]; beta = np.linalg.lstsq(X, tr.margin, rcond=None)[0]
 pred = lambda d: np.c_[d[MF], d.home] @ beta
 sd = float((pred(tr)-tr.margin).std())
+# early-season games (neither team has played yet this season) miss by more: widen the band just for those
+counts = []
+for y in sorted(D.keys()):
+    played = {}
+    for g in D[y][1].sort_values('date').itertuples():
+        hp, ap = played.get(g.home_id, 0), played.get(g.away_id, 0)
+        counts.append((y, g.game_id, min(hp, ap)))
+        played[g.home_id], played[g.away_id] = hp + 1, ap + 1
+mingp = pd.DataFrame(counts, columns=['year', 'gid', 'mingp'])
+tr_m = tr.merge(mingp, on=['year', 'gid'], how='left')
+early = tr_m[tr_m.mingp == 0]
+sd_early = float((pred(early) - early.margin).std())
 def sc(d):
     v = d.dropna(subset=['vegas']); p = pred(d)
     return {"n": len(d), "mae": float((p-d.margin).abs().mean()), "acc": float((np.sign(p)==np.sign(d.margin)).mean()),
@@ -21,7 +33,7 @@ bt_out = {"test": sc(te), "test_old_mae": old_mae, "val": sc(bt[(bt.year>=2021)&
           "train_years": "2008 to 2024", "test_years": "2025 and 2026 so far"}
 print('beta', beta, 'sd', sd, bt_out)
 teams_all = pd.concat([D[y][2] for y in sorted(D)]).drop_duplicates('team_id', keep='last')
-out = {"params": {"lam": LAMS, "beta": {f: round(float(b),4) for f,b in zip(MF, beta[:3])}, "hfa": round(float(beta[3]),3), "sd": round(sd,3), "shrink": SHRINK},
+out = {"params": {"lam": LAMS, "beta": {f: round(float(b),4) for f,b in zip(MF, beta[:3])}, "hfa": round(float(beta[3]),3), "sd": round(sd,3), "sd_early": round(sd_early,3), "shrink": SHRINK},
        "backtest": bt_out, "teams": {int(r.team_id): [r.school, r.abbreviation, r.conference, r.color] for r in teams_all.itertuples()},
        "seasons": {}, "coverage": {}}
 for y in range(2004, 2027):
