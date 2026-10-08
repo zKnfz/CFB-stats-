@@ -1,0 +1,524 @@
+<title>Gridiron T-Rank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: press-box stat sheet. Compact control strip, one dense sortable table, tabs for matchup and method. */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --ink:#152019; --muted:#5c6a61; --line:#d6ddd7;
+  --accent:#17603d; --accent-soft:#e1efe6; --chalk:#b7c4bb;
+  --good:#17603d; --bad:#a3352a; --good-bg:#d9eee0; --bad-bg:#f6dfdb;
+  --display:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --data:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1512; --panel:#151d18; --ink:#e4ebe6; --muted:#93a399; --line:#28342d;
+  --accent:#5cc58d; --accent-soft:#1c3427; --chalk:#3a4a40;
+  --good:#5cc58d; --bad:#ec7f72; --good-bg:#183526; --bad-bg:#3b211d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1512; --panel:#151d18; --ink:#e4ebe6; --muted:#93a399; --line:#28342d;
+  --accent:#5cc58d; --accent-soft:#1c3427; --chalk:#3a4a40;
+  --good:#5cc58d; --bad:#ec7f72; --good-bg:#183526; --bad-bg:#3b211d; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 20px;border-bottom:3px solid var(--ink);padding-bottom:10px}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(30px,6vw,44px);line-height:.95;margin:0;letter-spacing:.01em;text-transform:uppercase}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:13px;margin:4px 0 0}
+.asof{font-family:var(--data);font-size:13px;color:var(--muted);text-align:right}
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.field label,.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+select,input[type=date]{font:500 14px var(--data);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-height:34px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:600 13px var(--data);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.toggle{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;min-height:34px}
+.toggle input{accent-color:var(--accent);width:16px;height:16px}
+button:focus-visible,select:focus-visible,input:focus-visible,th:focus-visible,tr:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
+nav.tabs button{font:700 17px var(--display);text-transform:uppercase;letter-spacing:.04em;background:none;border:0;color:var(--muted);padding:6px 14px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.note{font-size:13px;color:var(--muted)}
+.tablebox{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-family:var(--data);font-variant-numeric:tabular-nums;font-size:14px}
+th{font:700 13px var(--display);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:right;padding:8px 8px;border-bottom:2px solid var(--ink);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
+th.l,td.l{text-align:left}
+th[aria-sort="descending"]::after{content:" ▼";font-size:9px}
+th[aria-sort="ascending"]::after{content:" ▲";font-size:9px}
+td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+tbody tr.team{cursor:pointer}
+tbody tr.team:hover td{background:var(--accent-soft)}
+td.rk{color:var(--muted);width:2.5em}
+td.tm{font-weight:600;font-family:var(--body)}
+.sw{display:inline-block;width:4px;height:14px;border-radius:1px;vertical-align:-2px;margin-right:7px}
+.r{font-size:11px;color:var(--muted);margin-left:4px;display:inline-block;min-width:2.2em;text-align:left}
+.cell{display:inline-block;padding:1px 5px;border-radius:3px}
+td.stick,th.stick{position:sticky;left:0;background:var(--panel);z-index:1}
+th.stick{z-index:2}
+tr.team:hover td.stick{background:var(--accent-soft)}
+.rating{font-weight:600}
+tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space:normal}
+.logt{width:auto;min-width:560px;font-size:13px}
+.logt td,.logt th{padding:4px 8px;position:static}
+.logt th{border-bottom:1px solid var(--chalk);cursor:default;background:transparent}
+.W{color:var(--good);font-weight:600}.L{color:var(--bad);font-weight:600}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px}
+.mu-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:end}
+@media (max-width:560px){.mu-grid{grid-template-columns:1fr}.vs{display:none}}
+.mu-grid select{width:100%}
+.vs{font:800 22px var(--display);color:var(--muted);padding-bottom:4px;text-align:center}
+.result{margin-top:18px;display:flex;flex-direction:column;gap:14px}
+.headline{font:800 clamp(26px,5vw,38px)/1.05 var(--display);text-transform:uppercase}
+.bar{display:flex;height:30px;border-radius:4px;overflow:hidden;font:700 14px var(--data);border:1px solid var(--line)}
+.bar div{display:flex;align-items:center;padding:0 8px;color:#fff;white-space:nowrap;min-width:0;overflow:hidden}
+.cmp{width:100%;min-width:0}
+.cmp td,.cmp th{position:static}
+.about{max-width:68ch;display:flex;flex-direction:column;gap:10px}
+.about h2{font:800 22px var(--display);text-transform:uppercase;margin:10px 0 0}
+.about p{margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{border-top:3px solid var(--ink);padding-top:6px}
+.stat b{display:block;font:800 28px var(--display)}
+.stat span{font-size:13px;color:var(--muted)}
+.empty{padding:24px;text-align:center;color:var(--muted)}
+.daynav{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.daynav button{font:700 15px var(--data);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;min-height:34px;padding:0 12px;cursor:pointer}
+.daynav button:disabled{opacity:.4;cursor:default}
+.dayhead{font:800 26px/1 var(--display);text-transform:uppercase;margin:0}
+.summary{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px}
+.summary b{font-family:var(--data)}
+.glist{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.game{display:grid;grid-template-columns:4.6em minmax(0,1fr) auto;gap:4px 12px;padding:10px 12px;border-bottom:1px solid var(--line);align-items:center;font-variant-numeric:tabular-nums}
+.game:last-child{border-bottom:0}
+.game .tm{font:500 13px var(--data);color:var(--muted)}
+.teams{display:flex;flex-direction:column;gap:2px;min-width:0}
+.teams div{display:flex;justify-content:space-between;gap:8px;font-weight:500}
+.teams div span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.teams .sc{font:700 15px var(--data)}
+.teams .win{font-weight:700}
+.pick{text-align:right;font-family:var(--data);font-size:13px;display:flex;flex-direction:column;gap:2px;align-items:flex-end}
+.pick b{font-size:14px;color:var(--ink)}
+.pick .ln{color:var(--muted)}
+.badge{font:700 12px var(--data);padding:1px 7px;border-radius:999px;letter-spacing:.03em}
+.badge.ok{background:var(--good-bg);color:var(--good)}
+.badge.no{background:var(--bad-bg);color:var(--bad)}
+.badge.up{background:var(--accent-soft);color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){tbody tr.team td{transition:background .12s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Gridiron <span>T-Rank</span></h1>
+      <p class="sub">Opponent-adjusted efficiency for FBS football. EPA per play, garbage time removed, FBS vs FBS games only.</p>
+    </div>
+    <div class="asof" id="asof"></div>
+  </header>
+
+  <section class="controls" aria-label="Filters">
+    <div class="field"><label for="season">Seasons</label>
+      <select id="season"></select></div>
+    <div class="field"><span class="lbl">Games in range</span>
+      <div class="chips" id="presets"></div></div>
+    <div class="field"><label for="from">From</label><input type="date" id="from"></div>
+    <div class="field"><label for="to">To</label><input type="date" id="to"></div>
+    <div class="field"><label for="conf">Conference</label><select id="conf"></select></div>
+    <label class="toggle"><input type="checkbox" id="prior" checked> Use last season as prior</label>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-ratings" aria-selected="true">Ratings</button>
+    <button role="tab" id="tab-games" aria-selected="false">Games</button>
+    <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
+    <button role="tab" id="tab-about" aria-selected="false">Method</button>
+  </nav>
+
+  <section id="p-ratings">
+    <p class="note" id="rnote"></p>
+    <div class="tablebox"><table id="rt"><thead><tr>
+      <th class="l" data-k="rk">Rk</th>
+      <th class="l stick" data-k="name">Team</th>
+      <th class="l" data-k="conf">Conf</th>
+      <th data-k="wins" title="Record in the selected range">Rec</th>
+      <th data-k="rating" title="Projected margin vs an average FBS team on a neutral field">Rating</th>
+      <th data-k="adjO" title="Adjusted offensive EPA per play">Adj Off</th>
+      <th data-k="adjD" title="Adjusted defensive EPA per play allowed (lower is better)">Adj Def</th>
+      <th data-k="srO" title="Adjusted offensive success rate">Off SR</th>
+      <th data-k="srD" title="Adjusted defensive success rate allowed">Def SR</th>
+      <th data-k="ptsO" title="Opponent-adjusted points scored per game">Adj PPG</th>
+      <th data-k="ptsD" title="Opponent-adjusted points allowed per game">Adj PA</th>
+      <th data-k="tom" title="Turnovers gained minus turnovers lost, per game">TO +/-</th>
+      <th data-k="pace" title="Non-garbage offensive plays per game">Plays/G</th>
+      <th data-k="passr" title="Share of offensive plays that are passes">Pass%</th>
+    </tr></thead><tbody></tbody></table></div>
+    <p class="note">Tap a team for its game log. G-Score is that game's performance in points vs an average team, adjusted for the opponent.</p>
+  </section>
+
+  <section id="p-games" hidden>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="daynav">
+        <button id="dprev" aria-label="Previous game day">◀</button>
+        <input type="date" id="dpick" aria-label="Pick a date">
+        <button id="dnext" aria-label="Next game day">▶</button>
+        <button id="dtoday">Today</button>
+      </div>
+      <h2 class="dayhead" id="dhead"></h2>
+      <div class="summary" id="dsum"></div>
+      <div class="glist" id="glist"></div>
+      <p class="note" id="gnote"></p>
+    </div>
+  </section>
+
+  <section id="p-matchup" hidden>
+    <div class="panel">
+      <div class="mu-grid">
+        <div class="field"><label for="ta">Team A</label><select id="ta"></select></div>
+        <div class="vs">vs</div>
+        <div class="field"><label for="tb">Team B</label><select id="tb"></select></div>
+      </div>
+      <div class="controls" style="margin-top:12px">
+        <div class="field"><label for="site">Site</label>
+          <select id="site"><option value="1">Team A at home</option><option value="0">Neutral</option><option value="-1">Team B at home</option></select></div>
+      </div>
+      <div class="result" id="mres"></div>
+    </div>
+    <p class="note">Uses the ratings from your current filters, so a "last 4 weeks" matchup projects off recent form.</p>
+  </section>
+
+  <section id="p-about" hidden>
+    <div class="about" id="about"></div>
+  </section>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const P = DATA.params;
+const $ = id => document.getElementById(id);
+let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
+let current = null;
+// All seasons merged, so a date range can cross seasons
+const SEASONS = Object.keys(DATA.seasons).sort();
+const ALL = {rows:[], games:{}, span:{}};
+for (const y of SEASONS){ const S=DATA.seasons[y];
+  for (const r of S.rows) ALL.rows.push(r);
+  Object.assign(ALL.games, S.games);
+  ALL.span[y] = [S.rows[0][0], S.rows[S.rows.length-1][0]]; }
+ALL.rows.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+function seasonsIn(from,to){ return SEASONS.filter(y=>ALL.span[y][1]>=from && ALL.span[y][0]<=to); }
+function seasonOf(d){ return SEASONS.find(y=>d<=ALL.span[y][1]) || SEASONS[SEASONS.length-1]; }
+
+// ---------- math ----------
+// Weighted ridge per stat: value = mu + o[off] + d[def] + h*loc ; penalty lam pulls o,d to priors.
+function solveRidge(rows, ids, num, wkey, lam, priors){
+  const n = ids.length, m = 2*n+2, idx = new Map(ids.map((t,i)=>[t,i]));
+  const A = new Float64Array(m*m), b = new Float64Array(m);
+  for (const r of rows){
+    const oi = idx.get(r.off), di = idx.get(r.def); if (oi===undefined||di===undefined) continue;
+    const w = wkey ? r[wkey] : 1; if (!w) continue;
+    const y = r[num]/(wkey ? w : 1);
+    const c = [oi, n+di, 2*n], v = [1,1,1];
+    if (r.loc!==0){ c.push(2*n+1); v.push(r.loc); }
+    for (let a=0;a<c.length;a++){ b[c[a]] += w*v[a]*y; for (let q=0;q<c.length;q++) A[c[a]*m+c[q]] += w*v[a]*v[q]; }
+  }
+  for (let i=0;i<n;i++){
+    A[i*m+i]+=lam; b[i]+=lam*(priors?priors[i][0]:0);
+    A[(n+i)*m+n+i]+=lam; b[n+i]+=lam*(priors?priors[i][1]:0);
+  }
+  A[(2*n)*m+2*n]+=1e-6; A[(2*n+1)*m+2*n+1]+=1e-6;
+  // Cholesky (A is symmetric positive definite)
+  const L = new Float64Array(m*m);
+  for (let j=0;j<m;j++){
+    let s = A[j*m+j]; for (let k=0;k<j;k++) s -= L[j*m+k]*L[j*m+k];
+    const d = Math.sqrt(s); L[j*m+j]=d;
+    for (let i=j+1;i<m;i++){ let t=A[i*m+j]; for (let k=0;k<j;k++) t-=L[i*m+k]*L[j*m+k]; L[i*m+j]=t/d; }
+  }
+  const z = new Float64Array(m), x = new Float64Array(m);
+  for (let i=0;i<m;i++){ let t=b[i]; for (let k=0;k<i;k++) t-=L[i*m+k]*z[k]; z[i]=t/L[i*m+i]; }
+  for (let i=m-1;i>=0;i--){ let t=z[i]; for (let k=i+1;k<m;k++) t-=L[k*m+i]*x[k]; x[i]=t/L[i*m+i]; }
+  return {o:x.slice(0,n), d:x.slice(n,2*n), mu:x[2*n], h:x[2*n+1]};
+}
+// Feature: [numerator, weight (null = one per game)]. The model rating blends NT, SR and PTS.
+const FEATS = {E:['epa','plays'], NT:['ent','pnt'], SR:['succ','plays'], PTS:['pts',null]};
+const MODEL = ['NT','SR','PTS'];
+
+function compute(){
+  const inRange = seasonsIn(state.from, state.to);
+  const ids = [...new Set(inRange.flatMap(y=>DATA.seasons[y].teams))];
+  const priorSeason = DATA.seasons[seasonOf(state.from)];
+  const rows = ALL.rows.filter(r=>r[0]>=state.from && r[0]<=state.to)
+    .map(r=>({date:r[0],gid:r[1],off:r[2],def:r[3],loc:r[4],plays:r[5],epa:r[6],succ:r[7],pp:r[8],pepa:r[9],tov:r[10],ent:r[11],pnt:r[12],pts:r[13]}));
+  const F = {};
+  for (const [f,[num,w]] of Object.entries(FEATS)){
+    const pri = state.prior ? ids.map(t=>(priorSeason.prior[t]||{})[f] || [0,0]) : null;
+    F[f] = solveRidge(rows, ids, num, w, P.lam[f], pri);
+  }
+  const confMap = DATA.seasons[inRange[inRange.length-1]].conf;
+  const teams = ids.map((t,i)=>({id:t, i, name:DATA.teams[t][0], abbr:DATA.teams[t][1], conf:confMap[t]||DATA.teams[t][2], color:DATA.teams[t][3]||'#888',
+    adjO:F.E.mu+F.E.o[i], adjD:F.E.mu+F.E.d[i], srO:F.SR.mu+F.SR.o[i], srD:F.SR.mu+F.SR.d[i],
+    ptsO:F.PTS.mu+F.PTS.o[i], ptsD:F.PTS.mu+F.PTS.d[i],
+    rating: MODEL.reduce((s,f)=>s+P.beta[f]*(F[f].o[i]-F[f].d[i]),0),
+    wins:0, losses:0, gp:0, plays:0, pp:0, give:0, take:0, games:[]}));
+  const byId = new Map(teams.map(t=>[t.id,t]));
+  // records + game logs
+  const seen = new Set(rows.map(r=>r.gid));
+  const off = new Map(); rows.forEach(r=>off.set(r.gid+':'+r.off, r));
+  for (const gid of seen){
+    const g = ALL.games[gid]; if(!g) continue;
+    const [date,h,a,hs,as,neutral] = g;
+    for (const [me,op,ms,os,loc] of [[h,a,hs,as,neutral?0:1],[a,h,as,hs,neutral?0:-1]]){
+      const t = byId.get(me), o = byId.get(op); if(!t||!o) continue;
+      const ro = off.get(gid+':'+me), rd = off.get(gid+':'+op); if(!ro||!rd) continue;
+      t.gp++; ms>os?t.wins++:t.losses++; t.plays+=ro.plays; t.pp+=ro.pp; t.give+=ro.tov; t.take+=rd.tov;
+      // opponent-adjusted single-game performance, scored with the same blend as the rating
+      let gs = 0;
+      for (const f of MODEL){
+        const [num,w] = FEATS[f], R = F[f];
+        const yo = ro[num]/(w?ro[w]:1), yd = rd[num]/(w?rd[w]:1);
+        const offPerf = yo - R.mu - R.d[o.i] - R.h*loc;
+        const defPerf = yd - R.mu - R.o[o.i] + R.h*loc;
+        gs += P.beta[f]*(offPerf-defPerf);
+      }
+      t.games.push({date, opp:o, loc, ms, os, offE:ro.epa/ro.plays, defE:rd.epa/rd.plays, g:gs});
+    }
+  }
+  teams.forEach(t=>{ t.pace=t.gp?t.plays/t.gp:0; t.passr=t.plays?t.pp/t.plays:0; t.tom=t.gp?(t.take-t.give)/t.gp:0; t.games.sort((a,b)=>a.date<b.date?-1:1); });
+  const rank = (key,dir)=>[...teams].sort((a,b)=>dir*(b[key]-a[key])).forEach((t,i)=>t[key+'Rk']=i+1);
+  rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('ptsO',1); rank('ptsD',-1);
+  current = {teams, byId, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
+    thin: inRange.filter(y=>DATA.coverage[y]<0.95), hasPrior: Object.keys(priorSeason.prior).length>0};
+}
+
+// ---------- rendering ----------
+const f3 = x => (x>=0?'+':'')+x.toFixed(3);
+const f1 = x => (x>=0?'+':'')+x.toFixed(1);
+const pct = x => (x*100).toFixed(1);
+function tint(rk, n){ // top/bottom quartile shading
+  if (rk<=n*0.25) return 'background:var(--good-bg)';
+  if (rk>n*0.75) return 'background:var(--bad-bg)';
+  return '';
+}
+function renderTable(){
+  const {teams} = current, n = teams.length;
+  let list = state.conf==='All' ? teams : teams.filter(t=>t.conf===state.conf);
+  const k = state.sort, dir = state.dir;
+  list = [...list].sort((a,b)=>{
+    if (k==='name'||k==='conf') return dir*(a[k]<b[k]?-1:a[k]>b[k]?1:0);
+    if (k==='rk') return dir*(a.ratingRk-b.ratingRk);
+    return dir*(a[k]-b[k]);
+  });
+  document.querySelectorAll('#rt th').forEach(th=>{
+    th.setAttribute('aria-sort', th.dataset.k===k ? (dir<0?'descending':'ascending') : 'none'); th.tabIndex=0; });
+  const tb = document.querySelector('#rt tbody');
+  if (!list.length){ tb.innerHTML = '<tr><td colspan="14" class="empty">No teams match these filters.</td></tr>'; return; }
+  tb.innerHTML = list.map(t=>{
+    let row = `<tr class="team" data-id="${t.id}" tabindex="0">
+      <td class="l rk">${t.ratingRk}</td>
+      <td class="l tm stick"><span class="sw" style="background:${t.color}"></span>${esc(t.name)}</td>
+      <td class="l">${esc(t.conf)}</td>
+      <td>${t.wins}-${t.losses}</td>
+      <td class="rating"><span class="cell" style="${tint(t.ratingRk,n)}">${f1(t.rating)}</span></td>
+      <td><span class="cell" style="${tint(t.adjORk,n)}">${f3(t.adjO)}</span><span class="r">${t.adjORk}</span></td>
+      <td><span class="cell" style="${tint(t.adjDRk,n)}">${f3(t.adjD)}</span><span class="r">${t.adjDRk}</span></td>
+      <td>${pct(t.srO)}<span class="r">${t.srORk}</span></td>
+      <td>${pct(t.srD)}<span class="r">${t.srDRk}</span></td>
+      <td>${t.ptsO.toFixed(1)}<span class="r">${t.ptsORk}</span></td>
+      <td>${t.ptsD.toFixed(1)}<span class="r">${t.ptsDRk}</span></td>
+      <td>${f1(t.tom)}</td>
+      <td>${t.pace.toFixed(1)}</td>
+      <td>${(t.passr*100).toFixed(0)}</td></tr>`;
+    if (state.open===t.id) row += `<tr class="log"><td colspan="14">${gameLog(t)}</td></tr>`;
+    return row;
+  }).join('');
+  $('rnote').textContent = `${current.nGames} games from ${fmtDate(state.from)} to ${fmtDate(state.to)}. ` +
+    (!state.prior ? `Prior off: ratings come only from games in range. ` : current.hasPrior ? `Starts from ${current.priorYear} ratings as a prior, which fade as games pile up. ` : `No prior available before 2004, so ratings come only from games in range. `) +
+    (current.thin.length ? `Play-by-play is missing for some games in ${current.thin.map(y=>y+' ('+Math.round(DATA.coverage[y]*100)+'% covered)').join(', ')}, so records there are incomplete. ` : '') +
+    (current.multi ? `This range crosses seasons, so each team is rated on the whole stretch as if it were one roster.` : '');
+}
+function gameLog(t){
+  if (!t.games.length) return '<span class="note">No games in this range.</span>';
+  return `<div style="overflow-x:auto"><table class="logt"><thead><tr><th class="l">Date</th><th class="l">Opponent</th><th class="l">Result</th><th>Off EPA/pl</th><th>Def EPA/pl</th><th>G-Score</th></tr></thead><tbody>${
+    t.games.map(g=>`<tr><td class="l">${fmtDate(g.date,!current.multi)}</td>
+      <td class="l">${g.loc===1?'vs':g.loc===-1?'at':'n'} ${esc(g.opp.name)} <span class="r">#${g.opp.ratingRk}</span></td>
+      <td class="l"><span class="${g.ms>g.os?'W':'L'}">${g.ms>g.os?'W':'L'}</span> ${g.ms}-${g.os}</td>
+      <td>${f3(g.offE)}</td><td>${f3(g.defE)}</td>
+      <td><span class="cell" style="${g.g>=10?'background:var(--good-bg)':g.g<=-10?'background:var(--bad-bg)':''}">${f1(g.g)}</span></td></tr>`).join('')
+  }</tbody></table></div>`;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function fmtDate(d,short){ const x=new Date(d+'T12:00:00'); return x.toLocaleDateString('en-US',short?{month:'short',day:'numeric'}:{month:'short',day:'numeric',year:'numeric'}); }
+
+function normCdf(z){ // Abramowitz-Stegun
+  const t=1/(1+0.2316419*Math.abs(z)), d=0.3989423*Math.exp(-z*z/2);
+  const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return z>0?1-p:p;
+}
+function renderMatchup(){
+  const {teams, byId, E} = current;
+  const opts = [...teams].sort((a,b)=>a.name<b.name?-1:1).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  for (const id of ['ta','tb']){ const s=$(id), v=s.value; s.innerHTML=opts; if (v && byId.has(+v)) s.value=v; }
+  if (!$('ta').dataset.init){ const top=[...teams].sort((a,b)=>a.ratingRk-b.ratingRk); $('ta').value=top[0].id; $('tb').value=top[1].id; $('ta').dataset.init=1; }
+  const A = byId.get(+$('ta').value), B = byId.get(+$('tb').value), site = +$('site').value;
+  if (A===B){ $('mres').innerHTML='<p class="note">Pick two different teams.</p>'; return; }
+  const margin = (A.rating-B.rating) + P.hfa*site;
+  const pA = normCdf(margin/P.sd);
+  const fav = margin>=0?A:B, m = Math.abs(margin);
+  const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
+    return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
+  $('mres').innerHTML = `
+    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}</div>
+    <div class="bar" role="img" aria-label="Win probability ${esc(A.name)} ${(pA*100).toFixed(0)} percent">
+      <div style="width:${pA*100}%;background:${A.color}">${pA>=0.12?esc(A.abbr)+' '+(pA*100).toFixed(0)+'%':''}</div>
+      <div style="width:${(1-pA)*100}%;background:${B.color};justify-content:flex-end">${pA<=0.88?esc(B.abbr)+' '+((1-pA)*100).toFixed(0)+'%':''}</div>
+    </div>
+    <div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l"></th><th>${esc(A.abbr)}</th><th>${esc(B.abbr)}</th></tr></thead><tbody>
+      ${row('Rating',A.rating,B.rating,x=>f1(x))}
+      ${row('Adj Off EPA/play',A.adjO,B.adjO,f3)}
+      ${row('Adj Def EPA/play',A.adjD,B.adjD,f3,true)}
+      ${row('Off success rate',A.srO,B.srO,x=>pct(x)+'%')}
+      ${row('Def success rate',A.srD,B.srD,x=>pct(x)+'%',true)}
+      ${row('Adj points scored',A.ptsO,B.ptsO,x=>x.toFixed(1))}
+      ${row('Adj points allowed',A.ptsD,B.ptsD,x=>x.toFixed(1),true)}
+      ${row('Turnover margin / game',A.tom,B.tom,f1)}
+    </tbody></table></div>
+    <p class="note">Win probability assumes the final margin lands within a normal spread of ${P.sd.toFixed(1)} points around the projection, the size of the model's misses in the 2025 backtest. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
+}
+function renderAbout(){
+  const t = DATA.backtest.test, B = P.beta;
+  $('about').innerHTML = `
+    <h2>What the rating means</h2>
+    <p>Rating is the projected scoring margin against an average FBS team on a neutral field. Rank, matchups and G-Scores all come from it.</p>
+    <h2>What goes into it</h2>
+    <p>Three opponent-adjusted stats, chosen because they predicted future games best when tested on 2008 to 2024:</p>
+    <p><b>Scoring margin</b>, adjusted for opponent, carries the most weight (${B.PTS.toFixed(2)} points of rating per adjusted point). <b>Success rate</b> adds ${(B.SR/10).toFixed(1)} points per 10 percentage points of margin. <b>EPA per play with turnovers removed</b> adds the rest.</p>
+    <p>Turnovers are pulled out of EPA on purpose. They swing single games but repeat poorly from week to week, so a team living on takeaways gets less credit than its raw EPA suggests. Raw EPA and turnover margin still show in the table for context.</p>
+    <h2>How teams are adjusted</h2>
+    <p>For each stat, every team-game is one observation: an offense against a defense. A ridge regression solves for every offense and defense at once, plus home field, so a strong number against a good defense counts for more than the same number against a bad one.</p>
+    <p>The regression pulls each team toward a prior. With the prior on, that prior is last season's final numbers regressed 10% toward average, and new FBS teams start below average. Early in the year the prior carries a lot of weight. By midseason each team's own games dominate. Turn the prior off to see only what happened in your date range.</p>
+    <h2>What counts</h2>
+    <p>Seasons go back to 2004, the first year with play-by-play. Coverage is thinner in 2004 to 2007 and in 2020, and the page flags it. A date range can cross seasons (Last 3 seasons, All seasons, or any custom dates). That treats each team as one unit over the whole stretch, which ignores roster turnover, so a matchup from a multi-season range is less trustworthy than one from the current season.</p>
+    <p>Play stats use only runs, passes and sacks between FBS teams. Kneels and special teams are out. Plays in garbage time are dropped: a margin over 38 in the 2nd quarter, 28 in the 3rd, or 22 in the 4th. Scoring margin uses final scores, so special teams count there.</p>
+    <h2>How good is it</h2>
+    <p>Tested on ${t.n} games in 2025 and 2026 that the model was not fit on, predicting each week using only games played before it:</p>
+    <div class="stats">
+      <div class="stat"><b>${t.mae.toFixed(1)}</b><span>avg miss in points (EPA-only version: ${DATA.backtest.test_old_mae.toFixed(1)})</span></div>
+      <div class="stat"><b>${t.vegas_mae.toFixed(1)}</b><span>Vegas line, same games</span></div>
+      <div class="stat"><b>${(t.acc*100).toFixed(0)}%</b><span>winners picked (Vegas ${(t.vegas_acc*100).toFixed(0)}%)</span></div>
+    </div>
+    <p>Vegas still wins by about a point. Most of that gap is information this model never sees: injuries, transfers, coaching changes and returning starters.</p>
+    <h2>Data</h2>
+    <p>Play-by-play and EPA from ESPN via the open sportsdataverse / cfbfastR project. Team info from CollegeFootballData.</p>`;
+}
+
+// ---------- games ----------
+// g = [gid, date, time, home, away, neutral, hs, as, pred(home margin), vegas(home margin)]
+const GBY = new Map(); for (const g of DATA.games){ if(!GBY.has(g[1])) GBY.set(g[1],[]); GBY.get(g[1]).push(g); }
+const GDATES = [...GBY.keys()].sort();
+let gday = null;
+const nm = id => (DATA.teams[id]||['?','?'])[0], ab = id => (DATA.teams[id]||['?','?'])[1];
+function todayET(){ try { return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}); } catch(e){ return new Date().toISOString().slice(0,10); } }
+function nearestDate(d){ const i = GDATES.findIndex(x=>x>=d); return i<0 ? GDATES[GDATES.length-1] : GDATES[i]; }
+function rec(list){ // straight-up record for graded games
+  let w=0,l=0,vw=0,vl=0,err=0,n=0;
+  for (const g of list){ if (g[6]===null||g[8]===null||g[6]===g[7]) continue;
+    const m=g[6]-g[7]; (g[8]>0)===(m>0)?w++:l++; err+=Math.abs(g[8]-m); n++;
+    if (g[9]!==null && g[9]!==0) (g[9]>0)===(m>0)?vw++:vl++; }
+  return {w,l,vw,vl,mae:n?err/n:0,n};
+}
+function seasonGames(d){ const y=seasonOf(d); const [lo,hi]=[ALL.span[y][0], y===SEASONS[SEASONS.length-1]?'9999':ALL.span[y][1]]; return DATA.games.filter(g=>g[1]>=lo&&g[1]<=hi); }
+function renderGames(){
+  if (!gday) gday = nearestDate(todayET());
+  const list = GBY.get(gday)||[], i = GDATES.indexOf(gday);
+  $('dprev').disabled = i<=0; $('dnext').disabled = i>=GDATES.length-1;
+  $('dpick').min=GDATES[0]; $('dpick').max=GDATES[GDATES.length-1]; $('dpick').value=gday;
+  $('dhead').textContent = new Date(gday+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const r = rec(list), up = list.filter(g=>g[6]===null).length, sr = rec(seasonGames(gday));
+  const pctS = (w,l)=> w+l ? ` (${Math.round(100*w/(w+l))}%)` : '';
+  $('dsum').innerHTML = (r.n ? `<span>Model <b>${r.w}-${r.l}</b>${pctS(r.w,r.l)}</span><span>Vegas <b>${r.vw}-${r.vl}</b></span><span>Avg miss <b>${r.mae.toFixed(1)}</b> pts</span>` : '') +
+    (up ? `<span><b>${up}</b> game${up>1?'s':''} still to play</span>` : '') +
+    (sr.n ? `<span>${seasonOf(gday)} season: model <b>${sr.w}-${sr.l}</b>${pctS(sr.w,sr.l)}, Vegas <b>${sr.vw}-${sr.vl}</b>${pctS(sr.vw,sr.vl)}</span>` : '');
+  $('glist').innerHTML = list.length ? list.map(g=>{
+    const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, done = hs!==null;
+    const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a);
+    const wp = pred===null?null:normCdf(Math.abs(pred)/P.sd);
+    const line = veg===null||veg===0 ? (veg===0?'Line: PK':'') : `Line: ${esc(ab(veg>0?h:a))} −${Math.abs(veg).toFixed(1)}`;
+    let badge = '<span class="badge up">Upcoming</span>';
+    if (done && pred!==null && hs!==as) badge = ((pred>0)===(hs>as)) ? '<span class="badge ok">✓ Correct</span>' : '<span class="badge no">✗ Missed</span>';
+    else if (done) badge = '<span class="badge up">No pick</span>';
+    else if (date < todayET()) badge = '<span class="badge up">No result</span>';
+    const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+    return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
+      <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
+      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}</b><span>${Math.round(wp*100)}% to win</span>`}
+        ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
+  }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
+  $('gnote').textContent = list.some(g=>g[6]===null)
+    ? `Upcoming picks use ratings as of ${fmtDate(DATA.asof)}. Past picks were made with only the games played before that week, so you can see how the model actually would have done.`
+    : `Each pick uses only games played before that week, the same way a live prediction would. FBS vs FBS games only.`;
+}
+function goDay(d){ gday=d; renderGames(); }
+$('dprev').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i>0) goDay(GDATES[i-1]); });
+$('dnext').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i<GDATES.length-1) goDay(GDATES[i+1]); });
+$('dtoday').addEventListener('click',()=>goDay(nearestDate(todayET())));
+$('dpick').addEventListener('change',e=>{ if(e.target.value) goDay(nearestDate(e.target.value)); });
+
+// ---------- controls ----------
+function seasonBounds(){
+  const last = SEASONS[SEASONS.length-1];
+  if (state.season==='all') return [ALL.span[SEASONS[0]][0], ALL.span[last][1]];
+  if (state.season==='last3') return [ALL.span[SEASONS[SEASONS.length-3]][0], ALL.span[last][1]];
+  return ALL.span[state.season]; }
+function globalBounds(){ return [ALL.rows[0][0], ALL.rows[ALL.rows.length-1][0]]; }
+function addDays(d,n){ const x=new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); }
+const PRESETS = [['all','Full range'],['l4','Last 4 weeks'],['l2','Last 2 weeks']];
+function applyPreset(p){
+  const [lo,hi]=seasonBounds(); state.preset=p; state.to=hi;
+  state.from = p==='all'?lo : p==='l4'?addDays(hi,-27) : addDays(hi,-13);
+  if (state.from<lo) state.from=lo;
+}
+function syncControls(){
+  const [lo,hi]=globalBounds();
+  for (const id of ['from','to']){ $(id).min=lo; $(id).max=hi; }
+  $('from').value=state.from; $('to').value=state.to;
+  $('presets').innerHTML = PRESETS.map(([k,l])=>`<button class="chip" data-p="${k}" aria-pressed="${state.preset===k}">${l}</button>`).join('');
+  const inR = seasonsIn(state.from,state.to), cm = DATA.seasons[inR[inR.length-1]].conf;
+  const confs = [...new Set(inR.flatMap(y=>DATA.seasons[y].teams).map(t=>cm[t]||DATA.teams[t][2]))].sort();
+  if (state.conf!=='All' && !confs.includes(state.conf)) state.conf='All';
+  $('conf').innerHTML = ['All',...confs].map(c=>`<option ${c===state.conf?'selected':''}>${esc(c)}</option>`).join('');
+  $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
+}
+function refresh(){ compute(); renderTable(); renderMatchup(); }
+function save(){ try{ localStorage.setItem('gtr', JSON.stringify({season:state.season,prior:state.prior,conf:state.conf})); }catch(e){} }
+
+$('presets').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; applyPreset(b.dataset.p); syncControls(); refresh(); });
+$('season').addEventListener('change', e=>{ state.season=e.target.value; state.open=null; applyPreset('all'); syncControls(); refresh(); save(); });
+for (const id of ['from','to']) $(id).addEventListener('change', e=>{
+  if (!e.target.value) return; state[id]=e.target.value; if (state.from>state.to){ const t=state.from; state.from=state.to; state.to=t; }
+  state.preset=null; syncControls(); refresh(); });
+$('conf').addEventListener('change', e=>{ state.conf=e.target.value; renderTable(); save(); });
+$('prior').addEventListener('change', e=>{ state.prior=e.target.checked; refresh(); save(); });
+for (const id of ['ta','tb','site']) $(id).addEventListener('change', renderMatchup);
+document.querySelector('#rt thead').addEventListener('click', e=>{ const th=e.target.closest('th'); if(!th) return; sortBy(th.dataset.k); });
+document.querySelector('#rt thead').addEventListener('keydown', e=>{ if(e.key==='Enter'){ const th=e.target.closest('th'); if(th) sortBy(th.dataset.k); }});
+function sortBy(k){
+  const lowFirst = ['rk','name','conf','adjD','srD','ptsD'];
+  if (state.sort===k) state.dir*=-1; else { state.sort=k; state.dir = lowFirst.includes(k)?1:-1; }
+  renderTable();
+}
+const tbody = document.querySelector('#rt tbody');
+function toggleRow(e){ const tr=e.target.closest('tr.team'); if(!tr) return; const id=+tr.dataset.id; state.open = state.open===id?null:id; renderTable(); }
+tbody.addEventListener('click', toggleRow);
+tbody.addEventListener('keydown', e=>{ if(e.key==='Enter') toggleRow(e); });
+document.querySelector('nav.tabs').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  for (const t of ['ratings','games','matchup','about']){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+});
+
+(function init(){
+  try{ const s=JSON.parse(localStorage.getItem('gtr')||'{}'); if(s.season&&(s.season==='all'||s.season==='last3'||DATA.seasons[s.season])) state.season=s.season; if(typeof s.prior==='boolean') state.prior=s.prior; if(s.conf) state.conf=s.conf; }catch(e){}
+  $('season').innerHTML = [...SEASONS].reverse().map(y=>`<option value="${y}">${y}</option>`).join('') + `<option value="last3">Last 3 seasons</option><option value="all">All seasons (${SEASONS[0]} to ${SEASONS[SEASONS.length-1]})</option>`;
+  $('season').value=state.season; $('prior').checked=state.prior;
+  applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames();
+})();
+</script>
