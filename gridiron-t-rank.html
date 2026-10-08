@@ -54,6 +54,7 @@ td.rk{color:var(--muted);width:2.5em}
 td.tm{font-weight:600;font-family:var(--body)}
 .sw{display:inline-block;width:4px;height:14px;border-radius:1px;vertical-align:-2px;margin-right:7px}
 .r{font-size:11px;color:var(--muted);margin-left:4px;display:inline-block;min-width:2.2em;text-align:left}
+.rk2{font-size:11px;color:var(--muted)}
 .cell{display:inline-block;padding:1px 5px;border-radius:3px}
 td.stick,th.stick{position:sticky;left:0;background:var(--panel);z-index:1}
 th.stick{z-index:2}
@@ -371,7 +372,9 @@ function renderMatchup(){
   if (A===B){ $('mres').innerHTML='<p class="note">Pick two different teams.</p>'; return; }
   const margin = (A.rating-B.rating) + P.hfa*site;
   const pA = normCdf(margin/P.sd);
-  const fav = margin>=0?A:B, m = Math.abs(margin);
+  const fav = margin>=0?A:B, dog = margin>=0?B:A, m = Math.abs(margin);
+  const total = (A.ptsO+B.ptsD)/2 + (B.ptsO+A.ptsD)/2;
+  const favScore = Math.round((total+m)/2), dogScore = Math.round((total-m)/2);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
     return `<tr><td class="l">${lbl}</td><td style="${better==='a'?'font-weight:700':''}">${fmt(a)}</td><td style="${better==='b'?'font-weight:700':''}">${fmt(b)}</td></tr>`; };
   const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
@@ -384,7 +387,7 @@ function renderMatchup(){
     </div>
     <p class="note">Edge is this model's win probability minus the market's for the same side. Positive means the model likes that side more than the market does, which is where a bet would have value if the model is right.</p>`;
   $('mres').innerHTML = `
-    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}</div>
+    <div class="headline">${esc(fav.name)} by ${m.toFixed(1)}, projected ${favScore}-${dogScore}</div>
     <div class="bar" role="img" aria-label="Win probability ${esc(A.name)} ${(pA*100).toFixed(0)} percent">
       <div style="width:${pA*100}%;background:${A.color}">${pA>=0.12?esc(A.abbr)+' '+(pA*100).toFixed(0)+'%':''}</div>
       <div style="width:${(1-pA)*100}%;background:${B.color};justify-content:flex-end">${pA<=0.88?esc(B.abbr)+' '+((1-pA)*100).toFixed(0)+'%':''}</div>
@@ -461,17 +464,26 @@ function renderGames(){
     (sr.n ? `<span>${seasonOf(gday)} season: model <b>${sr.w}-${sr.l}</b>${pctS(sr.w,sr.l)}, Vegas <b>${sr.vw}-${sr.vl}</b>${pctS(sr.vw,sr.vl)}</span>` : '');
   $('glist').innerHTML = list.length ? list.map(g=>{
     const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, done = hs!==null;
-    const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a);
+    const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a), dog = pred===null?null:(favH?a:h);
     const wp = pred===null?null:normCdf(Math.abs(pred)/P.sd);
     const line = veg===null||veg===0 ? (veg===0?'Line: PK':'') : `Line: ${esc(ab(veg>0?h:a))} −${Math.abs(veg).toFixed(1)}`;
     let badge = '<span class="badge up">Upcoming</span>';
     if (done && pred!==null && hs!==as) badge = ((pred>0)===(hs>as)) ? '<span class="badge ok">✓ Correct</span>' : '<span class="badge no">✗ Missed</span>';
     else if (done) badge = '<span class="badge up">No pick</span>';
     else if (date < todayET()) badge = '<span class="badge up">No result</span>';
-    const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+    let scoreTxt = '';
+    if (!done && pred!==null && current) {
+      const favT = current.byId.get(fav), dogT = current.byId.get(dog);
+      if (favT && dogT) {
+        const total = (favT.ptsO+dogT.ptsD)/2 + (dogT.ptsO+favT.ptsD)/2;
+        scoreTxt = ` ${Math.round((total+Math.abs(pred))/2)}-${Math.round((total-Math.abs(pred))/2)}`;
+      }
+    }
+    const rk = id => current && current.byId.get(id) ? `<span class="rk2">${current.byId.get(id).ratingRk}</span> ` : '';
+    const tline = (id,sc,other)=>`<div class="${done&&sc>other?'win':''}"><span>${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,as,hs)}${tline(h,hs,as)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
-      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}</b><span>${Math.round(wp*100)}% to win</span>`}
+      <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span>${Math.round(wp*100)}% to win</span>`}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
   }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
   $('gnote').textContent = list.some(g=>g[6]===null)
