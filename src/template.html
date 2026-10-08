@@ -146,6 +146,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <th data-k="adjD" title="Adjusted defensive EPA per play allowed (lower is better)">Adj Def</th>
       <th data-k="srO" title="Adjusted offensive success rate">Off SR</th>
       <th data-k="srD" title="Adjusted defensive success rate allowed">Def SR</th>
+      <th data-k="exO" title="Adjusted offensive EPA per successful, turnover-free play">Expl Off</th>
+      <th data-k="exD" title="Adjusted defensive EPA per successful, turnover-free play allowed (lower is better)">Expl Def</th>
       <th data-k="ptsO" title="Opponent-adjusted points scored per game">Adj PPG</th>
       <th data-k="ptsD" title="Opponent-adjusted points allowed per game">Adj PA</th>
       <th data-k="tom" title="Turnovers gained minus turnovers lost, per game">TO +/-</th>
@@ -240,7 +242,7 @@ function solveRidge(rows, ids, num, wkey, lam, priors){
   return {o:x.slice(0,n), d:x.slice(n,2*n), mu:x[2*n], h:x[2*n+1]};
 }
 // Feature: [numerator, weight (null = one per game)]. The model rating blends NT, SR and PTS.
-const FEATS = {E:['epa','plays'], NT:['ent','pnt'], SR:['succ','plays'], PTS:['pts',null]};
+const FEATS = {E:['epa','plays'], NT:['ent','pnt'], SR:['succ','plays'], PTS:['pts',null], EX:['ex','pex']};
 const MODEL = ['NT','SR','PTS'];
 
 function compute(){
@@ -248,7 +250,7 @@ function compute(){
   const ids = [...new Set(inRange.flatMap(y=>DATA.seasons[y].teams))];
   const priorSeason = DATA.seasons[seasonOf(state.from)];
   const rows = ALL.rows.filter(r=>r[0]>=state.from && r[0]<=state.to)
-    .map(r=>({date:r[0],gid:r[1],off:r[2],def:r[3],loc:r[4],plays:r[5],epa:r[6],succ:r[7],pp:r[8],pepa:r[9],tov:r[10],ent:r[11],pnt:r[12],pts:r[13]}));
+    .map(r=>({date:r[0],gid:r[1],off:r[2],def:r[3],loc:r[4],plays:r[5],epa:r[6],succ:r[7],pp:r[8],pepa:r[9],tov:r[10],ent:r[11],pnt:r[12],pts:r[13],ex:r[14],pex:r[15]}));
   const F = {};
   for (const [f,[num,w]] of Object.entries(FEATS)){
     const pri = state.prior ? ids.map(t=>(priorSeason.prior[t]||{})[f] || [0,0]) : null;
@@ -257,6 +259,7 @@ function compute(){
   const confMap = DATA.seasons[inRange[inRange.length-1]].conf;
   const teams = ids.map((t,i)=>({id:t, i, name:DATA.teams[t][0], abbr:DATA.teams[t][1], conf:confMap[t]||DATA.teams[t][2], color:DATA.teams[t][3]||'#888',
     adjO:F.E.mu+F.E.o[i], adjD:F.E.mu+F.E.d[i], srO:F.SR.mu+F.SR.o[i], srD:F.SR.mu+F.SR.d[i],
+    exO:F.EX.mu+F.EX.o[i], exD:F.EX.mu+F.EX.d[i],
     ptsO:F.PTS.mu+F.PTS.o[i], ptsD:F.PTS.mu+F.PTS.d[i],
     rating: MODEL.reduce((s,f)=>s+P.beta[f]*(F[f].o[i]-F[f].d[i]),0),
     wins:0, losses:0, gp:0, plays:0, pp:0, give:0, take:0, games:[]}));
@@ -285,7 +288,7 @@ function compute(){
   }
   teams.forEach(t=>{ t.pace=t.gp?t.plays/t.gp:0; t.passr=t.plays?t.pp/t.plays:0; t.tom=t.gp?(t.take-t.give)/t.gp:0; t.games.sort((a,b)=>a.date<b.date?-1:1); });
   const rank = (key,dir)=>[...teams].sort((a,b)=>dir*(b[key]-a[key])).forEach((t,i)=>t[key+'Rk']=i+1);
-  rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('ptsO',1); rank('ptsD',-1);
+  rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('exO',1); rank('exD',-1); rank('ptsO',1); rank('ptsD',-1);
   current = {teams, byId, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
     thin: inRange.filter(y=>DATA.coverage[y]<0.95), hasPrior: Object.keys(priorSeason.prior).length>0};
 }
@@ -311,7 +314,7 @@ function renderTable(){
   document.querySelectorAll('#rt th').forEach(th=>{
     th.setAttribute('aria-sort', th.dataset.k===k ? (dir<0?'descending':'ascending') : 'none'); th.tabIndex=0; });
   const tb = document.querySelector('#rt tbody');
-  if (!list.length){ tb.innerHTML = '<tr><td colspan="14" class="empty">No teams match these filters.</td></tr>'; return; }
+  if (!list.length){ tb.innerHTML = '<tr><td colspan="16" class="empty">No teams match these filters.</td></tr>'; return; }
   tb.innerHTML = list.map(t=>{
     let row = `<tr class="team" data-id="${t.id}" tabindex="0">
       <td class="l rk">${t.ratingRk}</td>
@@ -323,12 +326,14 @@ function renderTable(){
       <td><span class="cell" style="${tint(t.adjDRk,n)}">${f3(t.adjD)}</span><span class="r">${t.adjDRk}</span></td>
       <td>${pct(t.srO)}<span class="r">${t.srORk}</span></td>
       <td>${pct(t.srD)}<span class="r">${t.srDRk}</span></td>
+      <td><span class="cell" style="${tint(t.exORk,n)}">${f3(t.exO)}</span><span class="r">${t.exORk}</span></td>
+      <td><span class="cell" style="${tint(t.exDRk,n)}">${f3(t.exD)}</span><span class="r">${t.exDRk}</span></td>
       <td>${t.ptsO.toFixed(1)}<span class="r">${t.ptsORk}</span></td>
       <td>${t.ptsD.toFixed(1)}<span class="r">${t.ptsDRk}</span></td>
       <td>${f1(t.tom)}</td>
       <td>${t.pace.toFixed(1)}</td>
       <td>${(t.passr*100).toFixed(0)}</td></tr>`;
-    if (state.open===t.id) row += `<tr class="log"><td colspan="14">${gameLog(t)}</td></tr>`;
+    if (state.open===t.id) row += `<tr class="log"><td colspan="16">${gameLog(t)}</td></tr>`;
     return row;
   }).join('');
   $('rnote').textContent = `${current.nGames} games from ${fmtDate(state.from)} to ${fmtDate(state.to)}. ` +
@@ -378,6 +383,8 @@ function renderMatchup(){
       ${row('Adj Def EPA/play',A.adjD,B.adjD,f3,true)}
       ${row('Off success rate',A.srO,B.srO,x=>pct(x)+'%')}
       ${row('Def success rate',A.srD,B.srD,x=>pct(x)+'%',true)}
+      ${row('Explosiveness, off',A.exO,B.exO,f3)}
+      ${row('Explosiveness, def',A.exD,B.exD,f3,true)}
       ${row('Adj points scored',A.ptsO,B.ptsO,x=>x.toFixed(1))}
       ${row('Adj points allowed',A.ptsD,B.ptsD,x=>x.toFixed(1),true)}
       ${row('Turnover margin / game',A.tom,B.tom,f1)}
@@ -393,6 +400,7 @@ function renderAbout(){
     <p>Three opponent-adjusted stats, chosen because they predicted future games best when tested on 2008 to 2024:</p>
     <p><b>Scoring margin</b>, adjusted for opponent, carries the most weight (${B.PTS.toFixed(2)} points of rating per adjusted point). <b>Success rate</b> adds ${(B.SR/10).toFixed(1)} points per 10 percentage points of margin. <b>EPA per play with turnovers removed</b> adds the rest.</p>
     <p>Turnovers are pulled out of EPA on purpose. They swing single games but repeat poorly from week to week, so a team living on takeaways gets less credit than its raw EPA suggests. Raw EPA and turnover margin still show in the table for context.</p>
+    <p>Explosiveness (EPA per successful, turnover-free play) also shows in the table, separate from success rate. It was tested as a fourth rating input and didn't improve backtest accuracy, since its signal is already folded into EPA per play. It's shown for context only.</p>
     <h2>How teams are adjusted</h2>
     <p>For each stat, every team-game is one observation: an offense against a defense. A ridge regression solves for every offense and defense at once, plus home field, so a strong number against a good defense counts for more than the same number against a bad one.</p>
     <p>The regression pulls each team toward a prior. With the prior on, that prior is last season's final numbers regressed 10% toward average, and new FBS teams start below average. Early in the year the prior carries a lot of weight. By midseason each team's own games dominate. Turn the prior off to see only what happened in your date range.</p>
@@ -502,7 +510,7 @@ for (const id of ['ta','tb','site']) $(id).addEventListener('change', renderMatc
 document.querySelector('#rt thead').addEventListener('click', e=>{ const th=e.target.closest('th'); if(!th) return; sortBy(th.dataset.k); });
 document.querySelector('#rt thead').addEventListener('keydown', e=>{ if(e.key==='Enter'){ const th=e.target.closest('th'); if(th) sortBy(th.dataset.k); }});
 function sortBy(k){
-  const lowFirst = ['rk','name','conf','adjD','srD','ptsD'];
+  const lowFirst = ['rk','name','conf','adjD','srD','exD','ptsD'];
   if (state.sort===k) state.dir*=-1; else { state.sort=k; state.dir = lowFirst.includes(k)?1:-1; }
   renderTable();
 }

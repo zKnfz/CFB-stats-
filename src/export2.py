@@ -34,11 +34,11 @@ for y in range(2004, 2027):
     n = len(ids)
     prior = {} if pri is None else {int(t): {f: [round(float(pri[f][i]),4), round(float(pri[f][n+i]),4)] for f in FEATS} for i,t in enumerate(ids)}
     Rr = rows.sort_values(['date','game_id'])
-    cols = ['date','game_id','off','def','loc','plays','epa','succ','pplays','pepa','tov','epa_nt','plays_nt','pts']
+    cols = ['date','game_id','off','def','loc','plays','epa','succ','pplays','pepa','tov','epa_nt','plays_nt','pts','ex_nt','plays_ex']
     out["seasons"][y] = {"teams": [int(t) for t in ids], "prior": prior,
         "conf": {int(r.team_id): r.conference for r in teams.itertuples()},
-        "rows": [[a,int(b),int(c),int(d_),int(e),int(f),round(float(g),3),int(h),int(i),round(float(j),3),int(k),round(float(l),3),int(m),int(nn)]
-                 for a,b,c,d_,e,f,g,h,i,j,k,l,m,nn in Rr[cols].itertuples(index=False)],
+        "rows": [[a,int(b),int(c),int(d_),int(e),int(f),round(float(g),3),int(h),int(i),round(float(j),3),int(k),round(float(l),3),int(m),int(nn),round(float(oo),3),int(pp)]
+                 for a,b,c,d_,e,f,g,h,i,j,k,l,m,nn,oo,pp in Rr[cols].itertuples(index=False)],
         "games": {int(g.game_id): [g.date,int(g.home_id),int(g.away_id),int(g.home_score),int(g.away_score),bool(g.neutral_site),int(g.season_type),int(g.week)] for g in games.itertuples()}}
 json.dump(out, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
 # python reference for 2026 with prior, to check the browser

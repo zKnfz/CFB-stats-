@@ -53,7 +53,7 @@ Raw EPA (`E`) is still solved for display columns, but it's not in the rating.
 
 Out of sample (2025 and 2026 through Oct 7): average miss 12.62 points, picks 73% of winners. Vegas: 11.74 and 76%. The earlier EPA-only version missed by 12.89.
 
-Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA.
+Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA, adding explosiveness (EPA per successful, turnover-free play) as a fourth rating input. Explosiveness still shows as a display column (`EX` in `FEATS`), its signal is just already inside EPA per play, so it moved test MAE by under 0.01 points.
 
 ## The page
 
@@ -66,4 +66,4 @@ The Games tab uses precomputed pregame picks from `site_data.json`. Each past pi
 - Updates are manual: rerun `rebuild.sh` and republish. A daily scheduled rebuild would make the Games tab update like Torvik's.
 - The current season (2026) is hardcoded in `rebuild.sh`, `fetch_data.py`'s default and `export3.py`. Make it one setting before next season.
 - Biggest remaining accuracy gap vs Vegas: preseason info (returning production, transfers, recruiting). The CollegeFootballData API has this but needs a free API key.
-- Not built yet: Five Factors columns (explosiveness, field position, finishing drives), player stats (QB, rusher and receiver EPA are possible; defenders aren't), projected final records, a wins-above-playoff-team résumé stat.
+- Not built yet: remaining Five Factors columns (field position, finishing drives), player stats (QB, rusher and receiver EPA are possible; defenders aren't), projected final records, a wins-above-playoff-team résumé stat.
