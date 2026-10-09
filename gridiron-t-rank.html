@@ -192,8 +192,13 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
         <div class="field"><label for="mktB">Market % (B)</label><input type="number" id="mktB" min="0" max="100" step="1" placeholder="e.g. 18"></div>
       </div>
       <div class="result" id="mres"></div>
+      <div class="field" style="margin-top:8px"><button id="savePick" type="button">+ Save this pick to watchlist</button></div>
     </div>
     <p class="note">Uses the ratings from your current filters, so a "last 4 weeks" matchup projects off recent form. Enter a sportsbook or market price for either team to see the edge against this model.</p>
+    <div class="tablebox" style="margin-top:12px"><table id="wl"><thead><tr>
+      <th class="l">Pick</th><th>Model %</th><th>Market %</th><th>Edge</th><th class="l"></th>
+    </tr></thead><tbody></tbody></table></div>
+    <p class="note">Saved on this device only, in this browser. Sorted by edge, highest first.</p>
   </section>
 
   <section id="p-about" hidden>
@@ -558,6 +563,39 @@ $('conf').addEventListener('change', e=>{ state.conf=e.target.value; renderTable
 $('prior').addEventListener('change', e=>{ state.prior=e.target.checked; refresh(); save(); });
 for (const id of ['ta','tb','site','wbSel']) $(id).addEventListener('change', renderMatchup);
 for (const id of ['mktA','mktB']) $(id).addEventListener('input', renderMatchup);
+
+function loadWL(){ try{ return JSON.parse(localStorage.getItem('gtr_wl')||'[]'); }catch(e){ return []; } }
+function saveWL(list){ try{ localStorage.setItem('gtr_wl', JSON.stringify(list)); }catch(e){} }
+function renderWL(){
+  const list = loadWL();
+  const tb = document.querySelector('#wl tbody');
+  if (!list.length){ tb.innerHTML = '<tr><td colspan="5" class="empty">No saved picks yet.</td></tr>'; return; }
+  const sorted = list.map((p,i)=>({...p,i})).sort((a,b)=>b.edge-a.edge);
+  tb.innerHTML = sorted.map(p=>`<tr>
+    <td class="l">${esc(p.label)}</td><td>${p.modelPct.toFixed(1)}%</td><td>${p.marketPct.toFixed(1)}%</td>
+    <td style="color:${p.edge>=0?'var(--good)':'var(--bad)'}">${p.edge>=0?'+':''}${p.edge.toFixed(1)}</td>
+    <td class="l"><button type="button" class="wlDel" data-i="${p.i}">Remove</button></td></tr>`).join('');
+}
+$('savePick').addEventListener('click', ()=>{
+  if (!current) return;
+  const A = current.byId.get(+$('ta').value), B = current.byId.get(+$('tb').value), site = +$('site').value;
+  if (!A || !B || A===B) return;
+  const margin = (A.rating-B.rating) + P.hfa*site;
+  const sd = (A.gp===0 || B.gp===0) ? P.sd_early : P.sd;
+  const pA = normCdf(margin/sd);
+  const mA = parseFloat($('mktA').value), mB = parseFloat($('mktB').value);
+  const favIsA = margin>=0, fav = favIsA?A:B, dog = favIsA?B:A;
+  const favPct = (favIsA?pA:1-pA)*100, favMkt = favIsA?mA:mB;
+  if (isNaN(favMkt)){ alert('Enter the market percent for ' + fav.abbr + ' first.'); return; }
+  const list = loadWL();
+  list.push({label: fav.abbr+' over '+dog.abbr, modelPct: favPct, marketPct: favMkt, edge: favPct-favMkt});
+  saveWL(list); renderWL();
+});
+document.querySelector('#wl tbody').addEventListener('click', e=>{
+  const b = e.target.closest('.wlDel'); if (!b) return;
+  const list = loadWL(); list.splice(+b.dataset.i, 1); saveWL(list); renderWL();
+});
+renderWL();
 document.querySelector('#rt thead').addEventListener('click', e=>{ const th=e.target.closest('th'); if(!th) return; sortBy(th.dataset.k); });
 document.querySelector('#rt thead').addEventListener('keydown', e=>{ if(e.key==='Enter'){ const th=e.target.closest('th'); if(th) sortBy(th.dataset.k); }});
 function sortBy(k){
