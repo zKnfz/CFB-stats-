@@ -170,6 +170,10 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
         <input type="date" id="dpick" aria-label="Pick a date">
         <button id="dnext" aria-label="Next game day">▶</button>
         <button id="dtoday">Today</button>
+        <span class="chips" id="gsort" style="margin-left:auto">
+          <button class="chip" data-sort="time" aria-pressed="true">Time</button>
+          <button class="chip" data-sort="edge" aria-pressed="false">Biggest edge vs Kalshi</button>
+        </span>
       </div>
       <h2 class="dayhead" id="dhead"></h2>
       <div class="summary" id="dsum"></div>
@@ -557,6 +561,7 @@ function renderAbout(){
 const GBY = new Map(); for (const g of DATA.games){ if(!GBY.has(g[1])) GBY.set(g[1],[]); GBY.get(g[1]).push(g); }
 const GDATES = [...GBY.keys()].sort();
 let gday = null;
+let gsort = 'time';
 const nm = id => (DATA.teams[id]||['?','?'])[0], ab = id => (DATA.teams[id]||['?','?'])[1];
 function todayET(){ try { return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}); } catch(e){ return new Date().toISOString().slice(0,10); } }
 function nearestDate(d){ const i = GDATES.findIndex(x=>x>=d); return i<0 ? GDATES[GDATES.length-1] : GDATES[i]; }
@@ -568,9 +573,25 @@ function rec(list){ // straight-up record for graded games
   return {w,l,vw,vl,mae:n?err/n:0,n};
 }
 function seasonGames(d){ const y=seasonOf(d); const [lo,hi]=[ALL.span[y][0], y===SEASONS[SEASONS.length-1]?'9999':ALL.span[y][1]]; return DATA.games.filter(g=>g[1]>=lo&&g[1]<=hi); }
+function gameEdge(g){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g;
+  if (pred===null || kh==null || ka==null) return null;
+  const sd = mingp===0 ? P.sd_early : P.sd;
+  const favH = pred>=0;
+  const wpFav = normCdf(Math.abs(pred)/sd) * 100;
+  const kalshiFav = favH ? kh : ka;
+  return wpFav - kalshiFav;
+}
 function renderGames(){
   if (!gday) gday = nearestDate(todayET());
-  const list = GBY.get(gday)||[], i = GDATES.indexOf(gday);
+  let list = GBY.get(gday)||[], i = GDATES.indexOf(gday);
+  if (gsort==='edge') list = [...list].sort((x,y)=>{
+    const ex = gameEdge(x), ey = gameEdge(y);
+    if (ex===null && ey===null) return 0;
+    if (ex===null) return 1;
+    if (ey===null) return -1;
+    return Math.abs(ey) - Math.abs(ex);
+  });
   $('dprev').disabled = i<=0; $('dnext').disabled = i>=GDATES.length-1;
   $('dpick').min=GDATES[0]; $('dpick').max=GDATES[GDATES.length-1]; $('dpick').value=gday;
   $('dhead').textContent = new Date(gday+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
@@ -580,11 +601,13 @@ function renderGames(){
     (up ? `<span><b>${up}</b> game${up>1?'s':''} still to play</span>` : '') +
     (sr.n ? `<span>${seasonOf(gday)} season: model <b>${sr.w}-${sr.l}</b>${pctS(sr.w,sr.l)}, Vegas <b>${sr.vw}-${sr.vl}</b>${pctS(sr.vw,sr.vl)}</span>` : '');
   $('glist').innerHTML = list.length ? list.map(g=>{
-    const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp] = g, done = hs!==null;
+    const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g, done = hs!==null;
     const favH = pred!==null && pred>=0, fav = pred===null?null:(favH?h:a), dog = pred===null?null:(favH?a:h);
     const sd = mingp===0 ? P.sd_early : P.sd;
     const cushion = pred===null?null:Math.abs(pred)/2;
     const wp = pred===null?null:normCdf(cushion/sd);
+    const edge = gameEdge(g);
+    const kalshiFavPct = edge===null ? null : (favH ? kh : ka);
     const line = veg===null||veg===0 ? (veg===0?'Line: PK':'') : `Line: ${esc(ab(veg>0?h:a))} −${Math.abs(veg).toFixed(1)}`;
     let badge = '<span class="badge up">Upcoming</span>';
     if (done && pred!==null && hs!==as) badge = ((pred>0)===(hs>as)) ? '<span class="badge ok">✓ Correct</span>' : '<span class="badge no">✗ Missed</span>';
@@ -607,6 +630,7 @@ function renderGames(){
       <div class="teams">${tline(a,h,as,hs,false)}${tline(h,a,hs,as,true)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
       <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning by at least half the projected margin">${Math.round(wp*100)}% to win by ${cushion.toFixed(1)}+</span>`}
         ${mingp===0?'<span class="ln" title="Neither team has played yet this season, so this leans entirely on last season\'s rating. Wider uncertainty band than usual.">Preseason pick</span>':''}
+        ${edge!==null?`<span title="Model's win probability for ${esc(ab(fav))} minus Kalshi's live price for the same side">Kalshi ${kalshiFavPct}% <b style="color:${edge>=0?'var(--good)':'var(--bad)'}">${edge>=0?'+':''}${edge.toFixed(1)}</b></span>`:''}
         ${line?`<span class="ln">${line}</span>`:''}${badge}</div></div>`;
   }).join('') : '<div class="empty">No FBS vs FBS games on this date.</div>';
   $('gnote').textContent = list.some(g=>g[6]===null)
@@ -618,6 +642,10 @@ $('dprev').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i>0) 
 $('dnext').addEventListener('click',()=>{ const i=GDATES.indexOf(gday); if(i<GDATES.length-1) goDay(GDATES[i+1]); });
 $('dtoday').addEventListener('click',()=>goDay(nearestDate(todayET())));
 $('dpick').addEventListener('change',e=>{ if(e.target.value) goDay(nearestDate(e.target.value)); });
+$('gsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return;
+  gsort = b.dataset.sort;
+  document.querySelectorAll('#gsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b));
+  renderGames(); });
 function goToMatchup(a, opp, siteVal, date){
   state.season = seasonOf(date); state.open = null;
   applyPreset('all'); syncControls(); refresh();
