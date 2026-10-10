@@ -1,9 +1,18 @@
 """Walk-forward feature generation for model selection (vectorized ridge)."""
 from paths import DATA_DIR
-import pickle
+import pickle, json
 import numpy as np, pandas as pd
 
 D = pickle.load(open(DATA_DIR + "/prep.pkl", "rb"))
+try:
+    PRESEASON = json.load(open(DATA_DIR + "/preseason.json"))
+except FileNotFoundError:
+    PRESEASON = {}
+
+# talent/returning production z-score weight on the preseason prior, in std-devs of that
+# feature's own net rating. 0 = no-op (current behavior). Set by test scripts for grid search;
+# export2.py/export3.py pick up whatever final_prior() does since they share it.
+PRESEASON_COEF = {"talent": 0.0, "returning": 0.0}
 FEATS = {  # name: (numerator col, weight col)
     "E": ("epa", "plays"), "NT": ("epa_nt", "plays_nt"), "SR": ("succ", "plays"), "PTS": ("pts", "one"),
     "EX": ("ex_nt", "plays_ex"),  # explosiveness: EPA per successful, turnover-free play
@@ -40,17 +49,46 @@ def ridge(r, ids, num, wcol, lam, prior=None, decay_w=None):
 LAMS = {"E": 100, "NT": 100, "SR": 100, "PTS": 3, "EX": 150}
 
 
+def _preseason_adj(year, ids):
+    """Per-team z-score blend of talent + returning production for the upcoming season,
+    in raw (unscaled) units. None/0 for any team missing either stat, so it's a no-op
+    unless PRESEASON_COEF is set. Scaled to each feature's own std in final_prior()."""
+    yr = PRESEASON.get(str(year))
+    if not yr:
+        return None
+    def zscore(key):
+        vals = {int(t): v[key] for t, v in yr.items() if v.get(key) is not None}
+        if len(vals) < 10:
+            return {}
+        arr = np.array(list(vals.values())); mu, sd = arr.mean(), arr.std()
+        return {t: (x - mu) / sd for t, x in vals.items()} if sd > 0 else {}
+    tz, rz = zscore("talent"), zscore("returning_ppa")
+    if not tz and not rz:
+        return None
+    c = PRESEASON_COEF
+    return {t: c["talent"] * tz.get(t, 0.0) + c["returning"] * rz.get(t, 0.0) for t in ids}
+
+
 def final_prior(year, ids, shrink):
-    """Last season's final o,d per feature, shrunk; missing teams get a below-average default."""
+    """Last season's final o,d per feature, shrunk; missing teams get a below-average default.
+    Optionally nudged by this season's talent/returning production z-scores (PRESEASON_COEF)."""
     out = {}
     if year - 1 not in R:
         return None
     r = R[year - 1]; pids = sorted(set(r.off) | set(r["def"]))
+    padj = _preseason_adj(year, ids)
     for f, (num, wc) in FEATS.items():
         o, d, mu, h = ridge(r, pids, num, wc, LAMS[f])
         om = dict(zip(pids, o)); dm = dict(zip(pids, d))
         lo, hi = np.percentile(o, 20), np.percentile(d, 80)  # newcomers start weak
-        out[f] = np.r_[[om.get(t, lo) for t in ids], [dm.get(t, hi) for t in ids]] * shrink
+        base_o = np.array([om.get(t, lo) for t in ids])
+        base_d = np.array([dm.get(t, hi) for t in ids])
+        if padj:
+            std_f = (base_o - base_d).std()
+            adj = np.array([padj.get(t, 0.0) for t in ids]) * std_f
+            base_o = base_o + 0.5 * adj
+            base_d = base_d - 0.5 * adj
+        out[f] = np.r_[base_o, base_d] * shrink
     return out
 
 
