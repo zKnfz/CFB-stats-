@@ -232,8 +232,9 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 
     <h2 class="bt-h">Would this have made money?</h2>
     <p class="note">Flat $100 a bet, standard -110 vig (bet $110 to win $100), one bet per graded game with a market line, no bankroll management or bet sizing. The 95% range comes from the sample size alone (a Wilson interval on the win rate), it does not account for the market line changing between when the bet would have been placed and game time. If the model doesn't beat the market, that should show here as a loss, not get hidden.</p>
+    <p class="note">The right two columns are always the Test segment (2025 to present), regardless of which segment you've picked above, since that's the only range the model's blend wasn't fit on. A segment-picker result that looks great but disagrees with Test is measuring how well the model fits the years it was tuned on, not whether it predicts new games.</p>
     <div class="tablebox"><table id="btRoi"><thead><tr>
-      <th class="l">Edge bucket</th><th>N</th><th>ATS%</th><th>ROI</th><th>95% range</th>
+      <th class="l">Edge bucket</th><th>N</th><th>ATS%</th><th>ROI</th><th>95% range</th><th>Test N</th><th>Test ROI</th><th>Test 95% range</th>
     </tr></thead><tbody></tbody></table></div>
 
     <h2 class="bt-h">Calibration: predicted margin vs what actually happened</h2>
@@ -469,11 +470,13 @@ function btSegOf(year){
 }
 function renderBacktest(){
   const seg = $('btSeg').value;
-  const graded = DATA.games.filter(g => g[6] !== null && g[8] !== null).map(g => {
+  const allGraded = DATA.games.filter(g => g[6] !== null && g[8] !== null).map(g => {
     const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g;
     const year = +seasonOf(date);
     return {year, actual: hs - as, pred, veg};
-  }).filter(g => seg === 'all' || btSegOf(g.year) === seg);
+  });
+  const graded = allGraded.filter(g => seg === 'all' || btSegOf(g.year) === seg);
+  const gradedTest = allGraded.filter(g => btSegOf(g.year) === 'test');
 
   const stats = (rows) => {
     const n = rows.length;
@@ -502,14 +505,17 @@ function renderBacktest(){
     || '<tr><td colspan="8" class="empty">No graded games in this segment.</td></tr>';
 
   // edge buckets (needs a market line)
-  const withVeg = graded.filter(g => g.veg !== null && g.veg !== undefined);
   const BUCKETS = [[0,1],[1,2],[2,3],[3,5],[5,Infinity]];
-  const bucketRows = BUCKETS.map(([lo,hi]) => {
-    const rows = withVeg.filter(g => { const e = Math.abs(g.pred-g.veg); return e>=lo && e<hi; });
-    const s = stats(rows);
-    const label = hi===Infinity ? `${lo}+` : `${lo} to ${hi}`;
-    return {label, n: s.n, atsW: s.atsW, atsN: s.atsN, atsPct: s.atsPct, suAcc: s.suAcc, mae: s.mae};
-  });
+  const bucketize = (rows) => {
+    const withVeg = rows.filter(g => g.veg !== null && g.veg !== undefined);
+    return BUCKETS.map(([lo,hi]) => {
+      const bRows = withVeg.filter(g => { const e = Math.abs(g.pred-g.veg); return e>=lo && e<hi; });
+      const s = stats(bRows);
+      const label = hi===Infinity ? `${lo}+` : `${lo} to ${hi}`;
+      return {label, n: s.n, atsW: s.atsW, atsN: s.atsN, atsPct: s.atsPct, suAcc: s.suAcc, mae: s.mae};
+    });
+  };
+  const bucketRows = bucketize(graded);
   document.querySelector('#btEdge tbody').innerHTML = bucketRows.map(r => `<tr>
     <td class="l">${r.label}</td><td>${r.n}</td><td>${r.atsW}-${r.atsN-r.atsW}</td><td>${pct(r.atsPct)}</td>
     <td>${pct(r.suAcc)}</td><td>${num(r.mae)}</td></tr>`).join('')
@@ -524,17 +530,22 @@ function renderBacktest(){
     return [Math.max(0,center-margin), Math.min(1,center+margin)];
   };
   const roiOf = p => 190.90909*p - 100; // win pays 100/1.1=90.91 on a $100 stake, -110 both sides
-  const roiRows = bucketRows.map(r => {
+  const withRoi = (rows) => rows.map(r => {
     if (!r.atsN) return {...r, roi: null, lo: null, hi: null};
     const ci = wilson(r.atsW, r.atsN);
     return {...r, roi: roiOf(r.atsPct), lo: roiOf(ci[0]), hi: roiOf(ci[1])};
   });
+  const roiRows = withRoi(bucketRows);
+  const testBucketRows = withRoi(bucketize(gradedTest));
   const roiFmt = x => x===null ? '—' : (x>=0?'+':'')+x.toFixed(1)+'%';
-  document.querySelector('#btRoi tbody').innerHTML = roiRows.map(r => `<tr>
+  document.querySelector('#btRoi tbody').innerHTML = roiRows.map((r,i) => { const t = testBucketRows[i]; return `<tr>
     <td class="l">${r.label}</td><td>${r.atsN}</td><td>${pct(r.atsPct)}</td>
     <td style="color:${r.roi===null?'inherit':(r.roi>=0?'var(--good)':'var(--bad)')};font-weight:700">${roiFmt(r.roi)}</td>
-    <td>${r.lo===null?'—':roiFmt(r.lo)+' to '+roiFmt(r.hi)}</td></tr>`).join('')
-    || '<tr><td colspan="5" class="empty">No games with a market line in this segment.</td></tr>';
+    <td>${r.lo===null?'—':roiFmt(r.lo)+' to '+roiFmt(r.hi)}</td>
+    <td>${t.atsN}</td>
+    <td style="color:${t.roi===null?'inherit':(t.roi>=0?'var(--good)':'var(--bad)')};font-weight:700">${roiFmt(t.roi)}</td>
+    <td>${t.lo===null?'—':roiFmt(t.lo)+' to '+roiFmt(t.hi)}</td></tr>`; }).join('')
+    || '<tr><td colspan="8" class="empty">No games with a market line in this segment.</td></tr>';
 
   // calibration: predicted favorite strength vs what actually happened
   const CBUCKETS = [[0,3],[3,7],[7,14],[14,21],[21,Infinity]];
