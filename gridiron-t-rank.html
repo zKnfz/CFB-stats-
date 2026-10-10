@@ -80,6 +80,7 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .cmp td,.cmp th{position:static}
 .about{max-width:68ch;display:flex;flex-direction:column;gap:10px}
 .about h2{font:800 22px var(--display);text-transform:uppercase;margin:10px 0 0}
+.bt-h{font:800 22px var(--display);text-transform:uppercase;margin:18px 0 0}
 .about p{margin:0}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .stat{border-top:3px solid var(--ink);padding-top:6px}
@@ -135,6 +136,7 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
     <button role="tab" id="tab-ratings" aria-selected="true">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
     <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
+    <button role="tab" id="tab-backtest" aria-selected="false">Backtest</button>
     <button role="tab" id="tab-about" aria-selected="false">Method</button>
   </nav>
 
@@ -199,6 +201,36 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <th class="l">Pick</th><th>Model %</th><th>Market %</th><th>Edge</th><th class="l"></th>
     </tr></thead><tbody></tbody></table></div>
     <p class="note">Saved on this device only, in this browser. Sorted by edge, highest first.</p>
+  </section>
+
+  <section id="p-backtest" hidden>
+    <div class="controls">
+      <div class="field"><label for="btSeg">Segment</label>
+        <select id="btSeg">
+          <option value="test">Test: 2025 to present (true out of sample)</option>
+          <option value="val">Validation: 2021 to 2024</option>
+          <option value="train">Train: 2008 to 2024 (used to fit the blend, not a fair test)</option>
+          <option value="all">All graded games: 2008 to present</option>
+        </select></div>
+    </div>
+    <p class="note" id="btLeak">Every prediction here only used games played before it, see the Method tab for how that's enforced. The segment picker above exists because the blend weights (how much NT, SR and PTS each count) were themselves chosen by testing against 2008 to 2024, so that range is not a fair out of sample test of the blend, only 2025 onward is.</p>
+
+    <h2 class="bt-h">By season</h2>
+    <div class="tablebox"><table id="btSeason"><thead><tr>
+      <th class="l">Season</th><th>N</th><th>Straight up</th><th>MAE</th><th>RMSE</th><th>ATS N</th><th>ATS</th><th>Vegas MAE</th>
+    </tr></thead><tbody></tbody></table></div>
+
+    <h2 class="bt-h">ATS by model edge vs market</h2>
+    <p class="note">Edge is the model's projected margin minus the market line, for whichever side the model favors more than the market does. Games with no market line are excluded from this table.</p>
+    <div class="tablebox"><table id="btEdge"><thead><tr>
+      <th class="l">Edge bucket</th><th>N</th><th>ATS record</th><th>ATS%</th><th>Straight up</th><th>MAE</th>
+    </tr></thead><tbody></tbody></table></div>
+
+    <h2 class="bt-h">Calibration: predicted margin vs what actually happened</h2>
+    <p class="note">Bucketed by how big a favorite the model thought each team was. If the model is calibrated, the average actual margin in each row should track its average predicted margin.</p>
+    <div class="tablebox"><table id="btCal"><thead><tr>
+      <th class="l">Predicted favorite by</th><th>N</th><th>Avg predicted</th><th>Avg actual</th><th>Straight up</th>
+    </tr></thead><tbody></tbody></table></div>
   </section>
 
   <section id="p-about" hidden>
@@ -420,6 +452,78 @@ function renderMatchup(){
     </tbody></table></div>
     <p class="note">${sd===P.sd_early?`${esc(A.gp===0?A.abbr:B.abbr)} hasn't played in this range yet, so this leans entirely on a carried over prior. `:''}Both percentages assume the final margin lands within a normal spread of ${sd.toFixed(1)} points around the projection${sd===P.sd_early?', wider than the usual '+P.sd.toFixed(1)+' since preseason picks miss by more':''}. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
 }
+function btSegOf(year){
+  if (year >= 2025) return 'test';
+  if (year >= 2021) return 'val';     // val years are also inside train, same split export2.py reports
+  return 'train';
+}
+function renderBacktest(){
+  const seg = $('btSeg').value;
+  const graded = DATA.games.filter(g => g[6] !== null && g[8] !== null).map(g => {
+    const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g;
+    const year = +seasonOf(date);
+    return {year, actual: hs - as, pred, veg};
+  }).filter(g => seg === 'all' || btSegOf(g.year) === seg);
+
+  const stats = (rows) => {
+    const n = rows.length;
+    const errs = rows.map(r => r.pred - r.actual);
+    const mae = n ? errs.reduce((s,e)=>s+Math.abs(e),0)/n : null;
+    const rmse = n ? Math.sqrt(errs.reduce((s,e)=>s+e*e,0)/n) : null;
+    const su = rows.filter(r => r.actual !== 0);
+    const suAcc = su.length ? su.filter(r => (r.pred>0)===(r.actual>0)).length/su.length : null;
+    const withVeg = rows.filter(r => r.veg !== null && r.veg !== undefined);
+    const vegMae = withVeg.length ? withVeg.reduce((s,r)=>s+Math.abs(r.veg-r.actual),0)/withVeg.length : null;
+    const atsRows = withVeg.filter(r => r.actual !== r.veg && r.pred !== r.veg);
+    const atsW = atsRows.filter(r => (r.pred>r.veg) === (r.actual>r.veg)).length;
+    const atsN = atsRows.length;
+    return {n, mae, rmse, suAcc, atsN, atsW, atsPct: atsN ? atsW/atsN : null, vegMae};
+  };
+  const pct = x => x===null ? '—' : (x*100).toFixed(1)+'%';
+  const num = x => x===null ? '—' : x.toFixed(2);
+
+  // by season
+  const years = [...new Set(graded.map(g=>g.year))].sort();
+  const seasonRows = years.map(y => ({label: String(y), ...stats(graded.filter(g=>g.year===y))}));
+  const overall = {label: 'All seasons in segment', ...stats(graded)};
+  document.querySelector('#btSeason tbody').innerHTML = [...seasonRows, overall].map(r => `<tr${r===overall?' style="font-weight:700;border-top:2px solid var(--ink)"':''}>
+    <td class="l">${r.label}</td><td>${r.n}</td><td>${pct(r.suAcc)}</td><td>${num(r.mae)}</td><td>${num(r.rmse)}</td>
+    <td>${r.atsN}</td><td>${pct(r.atsPct)}</td><td>${num(r.vegMae)}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="empty">No graded games in this segment.</td></tr>';
+
+  // edge buckets (needs a market line)
+  const withVeg = graded.filter(g => g.veg !== null && g.veg !== undefined);
+  const BUCKETS = [[0,1],[1,2],[2,3],[3,5],[5,Infinity]];
+  const bucketRows = BUCKETS.map(([lo,hi]) => {
+    const rows = withVeg.filter(g => { const e = Math.abs(g.pred-g.veg); return e>=lo && e<hi; });
+    const s = stats(rows);
+    const label = hi===Infinity ? `${lo}+` : `${lo} to ${hi}`;
+    return {label, n: s.n, atsW: s.atsW, atsN: s.atsN, atsPct: s.atsPct, suAcc: s.suAcc, mae: s.mae};
+  });
+  document.querySelector('#btEdge tbody').innerHTML = bucketRows.map(r => `<tr>
+    <td class="l">${r.label}</td><td>${r.n}</td><td>${r.atsW}-${r.atsN-r.atsW}</td><td>${pct(r.atsPct)}</td>
+    <td>${pct(r.suAcc)}</td><td>${num(r.mae)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="empty">No games with a market line in this segment.</td></tr>';
+
+  // calibration: predicted favorite strength vs what actually happened
+  const CBUCKETS = [[0,3],[3,7],[7,14],[14,21],[21,Infinity]];
+  const calRows = CBUCKETS.map(([lo,hi]) => {
+    const rows = graded.filter(g => { const p = Math.abs(g.pred); return p>=lo && p<hi; });
+    const n = rows.length;
+    const avgPred = n ? rows.reduce((s,r)=>s+Math.abs(r.pred),0)/n : null;
+    // signed actual margin from the perspective of whichever side the model favored
+    const avgActual = n ? rows.reduce((s,r)=>s+(r.pred>=0?r.actual:-r.actual),0)/n : null;
+    const su = rows.filter(r=>r.actual!==0);
+    const suAcc = su.length ? su.filter(r=>(r.pred>0)===(r.actual>0)).length/su.length : null;
+    const label = hi===Infinity ? `${lo}+` : `${lo} to ${hi}`;
+    return {label, n, avgPred, avgActual, suAcc};
+  });
+  document.querySelector('#btCal tbody').innerHTML = calRows.map(r => `<tr>
+    <td class="l">${r.label}</td><td>${r.n}</td><td>${num(r.avgPred)}</td><td>${num(r.avgActual)}</td><td>${pct(r.suAcc)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="empty">No graded games in this segment.</td></tr>';
+}
+$('btSeg').addEventListener('change', renderBacktest);
+
 function renderAbout(){
   const t = DATA.backtest.test, B = P.beta;
   $('about').innerHTML = `
@@ -519,7 +623,7 @@ function goToMatchup(a, opp, siteVal, date){
   applyPreset('all'); syncControls(); refresh();
   $('ta').value = a; $('ta').dataset.init = 1; $('tb').value = opp; $('site').value = siteVal;
   renderMatchup(); save();
-  for (const t of ['ratings','games','matchup','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+  for (const t of ['ratings','games','matchup','backtest','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 }
 $('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return;
   goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date); });
@@ -609,13 +713,13 @@ tbody.addEventListener('click', toggleRow);
 tbody.addEventListener('keydown', e=>{ if(e.key==='Enter') toggleRow(e); });
 document.querySelector('nav.tabs').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
-  for (const t of ['ratings','games','matchup','about']){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+  for (const t of ['ratings','games','matchup','backtest','about']){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 });
 
 (function init(){
   try{ const s=JSON.parse(localStorage.getItem('gtr')||'{}'); if(s.season&&(s.season==='all'||s.season==='last3'||DATA.seasons[s.season])) state.season=s.season; if(typeof s.prior==='boolean') state.prior=s.prior; if(s.conf) state.conf=s.conf; }catch(e){}
   $('season').innerHTML = [...SEASONS].reverse().map(y=>`<option value="${y}">${y}</option>`).join('') + `<option value="last3">Last 3 seasons</option><option value="all">All seasons (${SEASONS[0]} to ${SEASONS[SEASONS.length-1]})</option>`;
   $('season').value=state.season; $('prior').checked=state.prior;
-  applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames();
+  applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames(); renderBacktest();
 })();
 </script>
