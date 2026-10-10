@@ -52,8 +52,8 @@ jobs:
         run: |
           git config user.name "gtr-bot"
           git config user.email "gtr-bot@users.noreply.github.com"
-          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl)" ]; then
-            git add gridiron-t-rank.html kalshi_history.jsonl
+          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl data/preseason.json)" ]; then
+            git add gridiron-t-rank.html kalshi_history.jsonl data/preseason.json
             git commit -m "Automated rebuild with latest data"
             git push
           else
