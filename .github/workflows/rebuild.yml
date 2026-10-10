@@ -36,7 +36,7 @@ jobs:
       - name: Run pipeline
         working-directory: src
         env:
-          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_API_KEY: ${{ secrets.CFBAPI }}
         run: |
           python3 fetch_data.py 2026
           python3 prep.py
