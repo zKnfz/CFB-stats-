@@ -622,12 +622,13 @@ function renderGames(){
       }
     }
     const rk = id => current && current.byId.get(id) ? `<span class="rk2">${current.byId.get(id).ratingRk}</span> ` : '';
-    const tline = (id,opp,sc,other,isHome)=>{
+    const tline = (id,opp,sc,other,isHome,ownK,oppK)=>{
       const siteVal = neu?0:(isHome?1:-1);
-      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}" tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+      const kAttr = (ownK!=null&&oppK!=null) ? ` data-ka="${ownK}" data-kb="${oppK}"` : '';
+      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}"${kAttr} tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     };
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
-      <div class="teams">${tline(a,h,as,hs,false)}${tline(h,a,hs,as,true)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
+      <div class="teams">${tline(a,h,as,hs,false,ka,kh)}${tline(h,a,hs,as,true,kh,ka)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
       <div class="pick">${pred===null?'<span class="ln">No prediction</span>':`<b>${esc(ab(fav))} by ${Math.abs(pred).toFixed(1)}${scoreTxt}</b><span title="Chance of winning by at least half the projected margin">${Math.round(wp*100)}% to win by ${cushion.toFixed(1)}+</span>`}
         ${mingp===0?'<span class="ln" title="Neither team has played yet this season, so this leans entirely on last season\'s rating. Wider uncertainty band than usual.">Preseason pick</span>':''}
         ${edge!==null?`<span title="Model's win probability for ${esc(ab(fav))} minus Kalshi's live price for the same side">Kalshi ${kalshiFavPct}% <b style="color:${edge>=0?'var(--good)':'var(--bad)'}">${edge>=0?'+':''}${edge.toFixed(1)}</b></span>`:''}
@@ -646,17 +647,20 @@ $('gsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(
   gsort = b.dataset.sort;
   document.querySelectorAll('#gsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b));
   renderGames(); });
-function goToMatchup(a, opp, siteVal, date){
+function goToMatchup(a, opp, siteVal, date, kA, kB){
   state.season = seasonOf(date); state.open = null;
   applyPreset('all'); syncControls(); refresh();
   $('ta').value = a; $('ta').dataset.init = 1; $('tb').value = opp; $('site').value = siteVal;
+  $('mktA').value = kA ?? ''; $('mktB').value = kB ?? '';
   renderMatchup(); save();
   for (const t of ['ratings','games','matchup','backtest','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 }
-$('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return;
-  goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date); });
-$('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return;
-  goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date); });
+function tmlinkGo(el){
+  goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date,
+    el.dataset.ka ? +el.dataset.ka : null, el.dataset.kb ? +el.dataset.kb : null);
+}
+$('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
+$('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
 
 // ---------- controls ----------
 function seasonBounds(){
