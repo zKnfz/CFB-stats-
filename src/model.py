@@ -10,9 +10,11 @@ except FileNotFoundError:
     PRESEASON = {}
 
 # talent/returning production z-score weight on the preseason prior, in std-devs of that
-# feature's own net rating. 0 = no-op (current behavior). Set by test scripts for grid search;
-# export2.py/export3.py pick up whatever final_prior() does since they share it.
-PRESEASON_COEF = {"talent": 0.0, "returning": 0.0}
+# feature's own net rating. Chosen by walk-forward backtest: tuned on 2015-2024 preseason-only
+# games, confirmed on 2025-2026 (never touched while tuning). Cuts preseason-only MAE 15.44 -> 14.07
+# and nearly erases the ~5 point too-generous-to-the-favorite bias. returning_ppa made things worse,
+# alone or blended in, so it stays off. export2.py/export3.py pick this up since they share final_prior().
+PRESEASON_COEF = {"talent": 0.8, "returning": 0.0}
 FEATS = {  # name: (numerator col, weight col)
     "E": ("epa", "plays"), "NT": ("epa_nt", "plays_nt"), "SR": ("succ", "plays"), "PTS": ("pts", "one"),
     "EX": ("ex_nt", "plays_ex"),  # explosiveness: EPA per successful, turnover-free play
