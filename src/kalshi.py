@@ -3,11 +3,13 @@
 kalshi_away_pct (both null if unmatched or the fetch failed). No API key needed for
 market data. Run this after export3.py, before build_page.py.
 """
-import sys, json, unicodedata
+import sys, json, unicodedata, os, datetime
 sys.path.insert(0, '.')
 from collections import defaultdict
 import urllib.request
 from paths import DATA_DIR
+
+HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'kalshi_history.jsonl')
 
 ALIASES = {
     "appalachian state": "app state", "southern mississippi": "southern miss",
@@ -66,10 +68,13 @@ def main():
         by_ids[frozenset((g[3], g[4]))] = i
 
     matched = 0
+    now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    snapshot_lines = []
     for event, ms in by_event.items():
         if len(ms) != 2:
             continue
         teams = {}
+        vols = {}
         ok = True
         for m in ms:
             name = match_team(m["yes_sub_title"])
@@ -80,6 +85,7 @@ def main():
             vol, last = float(m["volume_24h_fp"]), float(m["last_price_dollars"])
             pct = last * 100 if vol > 0 and last > 0 else (bid + ask) / 2 * 100
             teams[name] = round(pct, 1)
+            vols[name] = vol
         if not ok or len(teams) != 2:
             continue
         ids = frozenset(our_to_id[n] for n in teams)
@@ -91,6 +97,18 @@ def main():
         away_name = site['teams'][str(g[4])][0]
         g += [teams[home_name], teams[away_name]]
         matched += 1
+        # log a snapshot now, so line movement over time becomes buildable going forward,
+        # even without historical opening lines
+        snapshot_lines.append(json.dumps({
+            "ts": now, "gid": g[0], "date": g[1], "home_id": g[3], "away_id": g[4],
+            "home_pct": teams[home_name], "away_pct": teams[away_name],
+            "home_vol24h": vols[home_name], "away_vol24h": vols[away_name],
+            "model_pred": g[8], "vegas_line": g[9],
+        }))
+
+    if snapshot_lines:
+        with open(HISTORY_PATH, 'a') as f:
+            f.write('\n'.join(snapshot_lines) + '\n')
 
     # pad every other game row to the same length (14: original 11 + 2 kalshi fields)
     for g in site['games']:

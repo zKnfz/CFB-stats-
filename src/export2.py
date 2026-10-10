@@ -4,6 +4,9 @@ import numpy as np, pandas as pd
 from model import D, R, FEATS, LAMS, ridge, final_prior
 from scipy.stats import norm
 SHRINK = 0.9; MF = ['NT','SR','PTS']
+# bump this whenever FEATS, MF, beta, a lambda, or SHRINK changes, so old backtest rows
+# can be told apart from a different model's. Not bumped for display-only additions.
+MODEL_VERSION = "1.0.0"
 bt = pd.read_pickle(DATA_DIR + '/bt.pkl'); bt = bt[(bt.shrink==0.9)&(bt.hl==0)&(bt.year!=2020)]
 tr = bt[bt.year<=2024]
 X = np.c_[tr[MF], tr.home]; beta = np.linalg.lstsq(X, tr.margin, rcond=None)[0]
@@ -33,7 +36,7 @@ bt_out = {"test": sc(te), "test_old_mae": old_mae, "val": sc(bt[(bt.year>=2021)&
           "train_years": "2008 to 2024", "test_years": "2025 and 2026 so far"}
 print('beta', beta, 'sd', sd, bt_out)
 teams_all = pd.concat([D[y][2] for y in sorted(D)]).drop_duplicates('team_id', keep='last')
-out = {"params": {"lam": LAMS, "beta": {f: round(float(b),4) for f,b in zip(MF, beta[:3])}, "hfa": round(float(beta[3]),3), "sd": round(sd,3), "sd_early": round(sd_early,3), "shrink": SHRINK},
+out = {"params": {"lam": LAMS, "beta": {f: round(float(b),4) for f,b in zip(MF, beta[:3])}, "hfa": round(float(beta[3]),3), "sd": round(sd,3), "sd_early": round(sd_early,3), "shrink": SHRINK, "model_version": MODEL_VERSION},
        "backtest": bt_out, "teams": {int(r.team_id): [r.school, r.abbreviation, r.conference, r.color] for r in teams_all.itertuples()},
        "seasons": {}, "coverage": {}}
 for y in range(2004, 2027):

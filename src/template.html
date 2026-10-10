@@ -230,6 +230,12 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <th class="l">Edge bucket</th><th>N</th><th>ATS record</th><th>ATS%</th><th>Straight up</th><th>MAE</th>
     </tr></thead><tbody></tbody></table></div>
 
+    <h2 class="bt-h">Would this have made money?</h2>
+    <p class="note">Flat $100 a bet, standard -110 vig (bet $110 to win $100), one bet per graded game with a market line, no bankroll management or bet sizing. The 95% range comes from the sample size alone (a Wilson interval on the win rate), it does not account for the market line changing between when the bet would have been placed and game time. If the model doesn't beat the market, that should show here as a loss, not get hidden.</p>
+    <div class="tablebox"><table id="btRoi"><thead><tr>
+      <th class="l">Edge bucket</th><th>N</th><th>ATS%</th><th>ROI</th><th>95% range</th>
+    </tr></thead><tbody></tbody></table></div>
+
     <h2 class="bt-h">Calibration: predicted margin vs what actually happened</h2>
     <p class="note">Bucketed by how big a favorite the model thought each team was. If the model is calibrated, the average actual margin in each row should track its average predicted margin.</p>
     <div class="tablebox"><table id="btCal"><thead><tr>
@@ -509,6 +515,27 @@ function renderBacktest(){
     <td>${pct(r.suAcc)}</td><td>${num(r.mae)}</td></tr>`).join('')
     || '<tr><td colspan="6" class="empty">No games with a market line in this segment.</td></tr>';
 
+  // would this have made money: flat $100, -110 both sides, Wilson 95% CI on the win rate
+  const wilson = (w, n) => {
+    if (!n) return null;
+    const p = w/n, z = 1.96, z2 = z*z;
+    const center = (p + z2/(2*n)) / (1 + z2/n);
+    const margin = (z/(1+z2/n)) * Math.sqrt(p*(1-p)/n + z2/(4*n*n));
+    return [Math.max(0,center-margin), Math.min(1,center+margin)];
+  };
+  const roiOf = p => 190.90909*p - 100; // win pays 100/1.1=90.91 on a $100 stake, -110 both sides
+  const roiRows = bucketRows.map(r => {
+    if (!r.atsN) return {...r, roi: null, lo: null, hi: null};
+    const ci = wilson(r.atsW, r.atsN);
+    return {...r, roi: roiOf(r.atsPct), lo: roiOf(ci[0]), hi: roiOf(ci[1])};
+  });
+  const roiFmt = x => x===null ? '—' : (x>=0?'+':'')+x.toFixed(1)+'%';
+  document.querySelector('#btRoi tbody').innerHTML = roiRows.map(r => `<tr>
+    <td class="l">${r.label}</td><td>${r.atsN}</td><td>${pct(r.atsPct)}</td>
+    <td style="color:${r.roi===null?'inherit':(r.roi>=0?'var(--good)':'var(--bad)')};font-weight:700">${roiFmt(r.roi)}</td>
+    <td>${r.lo===null?'—':roiFmt(r.lo)+' to '+roiFmt(r.hi)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="empty">No games with a market line in this segment.</td></tr>';
+
   // calibration: predicted favorite strength vs what actually happened
   const CBUCKETS = [[0,3],[3,7],[7,14],[14,21],[21,Infinity]];
   const calRows = CBUCKETS.map(([lo,hi]) => {
@@ -541,6 +568,8 @@ function renderAbout(){
     <h2>How teams are adjusted</h2>
     <p>For each stat, every team-game is one observation: an offense against a defense. A ridge regression solves for every offense and defense at once, plus home field, so a strong number against a good defense counts for more than the same number against a bad one.</p>
     <p>The regression pulls each team toward a prior. With the prior on, that prior is last season's final numbers regressed 10% toward average, and new FBS teams start below average. Early in the year the prior carries a lot of weight. By midseason each team's own games dominate. Turn the prior off to see only what happened in your date range.</p>
+    <h2>Model version</h2>
+    <p><b>${esc(P.model_version||'unversioned')}</b>, as of ${esc(DATA.asof)}. This bumps whenever the formula itself changes (which stats feed the rating, their weights, a lambda, or the prior's shrink), not for display-only additions like explosiveness or Kalshi odds. Every prediction in the Backtest tab came from this version unless the version bumps and old rows mix with new, worth checking here if a backtest result looks off after a model change.</p>
     <h2>What counts</h2>
     <p>Seasons go back to 2004, the first year with play-by-play. Coverage is thinner in 2004 to 2007 and in 2020, and the page flags it. A date range can cross seasons (Last 3 seasons, All seasons, or any custom dates). That treats each team as one unit over the whole stretch, which ignores roster turnover, so a matchup from a multi-season range is less trustworthy than one from the current season.</p>
     <p>Play stats use only runs, passes and sacks between FBS teams. Kneels and special teams are out. Plays in garbage time are dropped: a margin over 38 in the 2nd quarter, 28 in the 3rd, or 22 in the 4th. Scoring margin uses final scores, so special teams count there.</p>

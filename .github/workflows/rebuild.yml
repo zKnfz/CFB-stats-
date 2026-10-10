@@ -45,12 +45,12 @@ jobs:
           python3 kalshi.py
           python3 build_page.py
 
-      - name: Commit updated page if changed
+      - name: Commit updated page and odds history if changed
         run: |
           git config user.name "gtr-bot"
           git config user.email "gtr-bot@users.noreply.github.com"
-          if ! git diff --quiet -- gridiron-t-rank.html; then
-            git add gridiron-t-rank.html
+          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl)" ]; then
+            git add gridiron-t-rank.html kalshi_history.jsonl
             git commit -m "Automated rebuild with latest data"
             git push
           else
