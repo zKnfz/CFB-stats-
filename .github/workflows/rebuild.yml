@@ -1,0 +1,70 @@
+name: Rebuild ratings site
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"   # every 3 hours; current season data is always re-fetched
+  workflow_dispatch: {}      # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: rebuild
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # historical years never change, so cache data/ to skip re-downloading ~1.2GB every run.
+      # the current season's files are always re-fetched on top of the cache (fetch_data.py forces it).
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: cfb-data-v1
+
+      - run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        working-directory: src
+        run: |
+          python3 fetch_data.py 2026
+          python3 prep.py
+          python3 run_bt.py
+          python3 pregame.py
+          python3 export2.py
+          python3 export3.py
+          python3 build_page.py
+
+      - name: Commit updated page if changed
+        run: |
+          git config user.name "gtr-bot"
+          git config user.email "gtr-bot@users.noreply.github.com"
+          if ! git diff --quiet -- gridiron-t-rank.html; then
+            git add gridiron-t-rank.html
+            git commit -m "Automated rebuild with latest data"
+            git push
+          else
+            echo "No changes, skipping commit"
+          fi
+
+      - name: Stage just the page for Pages
+        run: |
+          mkdir -p public
+          cp gridiron-t-rank.html public/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
