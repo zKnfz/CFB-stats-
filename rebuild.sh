@@ -9,4 +9,5 @@ python3 pregame.py
 python3 export2.py
 python3 export3.py
 python3 kalshi.py
+python3 preseason.py   # needs CFBD_API_KEY env var set, skips gracefully if not
 python3 build_page.py

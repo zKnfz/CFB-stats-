@@ -35,6 +35,8 @@ jobs:
 
       - name: Run pipeline
         working-directory: src
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: |
           python3 fetch_data.py 2026
           python3 prep.py
@@ -43,6 +45,7 @@ jobs:
           python3 export2.py
           python3 export3.py
           python3 kalshi.py
+          python3 preseason.py
           python3 build_page.py
 
       - name: Commit updated page and odds history if changed
