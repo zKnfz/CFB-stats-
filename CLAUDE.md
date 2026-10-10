@@ -23,7 +23,11 @@ Pipeline, in order (all scripts live in `src/`, run from `src/`):
 | Early years | `pregame.py` | `pregame.pkl`: adds 2004 to 2007 |
 | Fit + export | `export2.py` | `site_data.json`: model weights, backtest stats, per-game rows, priors |
 | Games | `export3.py` | adds pregame picks for every past game and upcoming 2026 games |
+| Market odds | `kalshi.py` | adds live Kalshi odds to upcoming games, logs a snapshot to `kalshi_history.jsonl` |
+| Preseason signal | `preseason.py` | `preseason.json`: CFBD talent composite + returning production, needs `CFBD_API_KEY` env var, skips gracefully without it |
 | Page | `build_page.py` | injects `site_data.json` into `src/template.html` |
+
+A GitHub Actions workflow (`.github/workflows/rebuild.yml`) runs this whole pipeline every 3 hours and on manual trigger, commits the updated page, and deploys it to GitHub Pages. The `CFBD_API_KEY` secret in the repo is actually named `CFBAPI`.
 
 ## Data sources
 
@@ -43,7 +47,9 @@ Three stats feed the rating (chosen by walk-forward testing on 2008 to 2024):
 - `SR`: success rate, weighted by plays, lambda 100
 - `NT`: EPA per play with turnover plays removed, lambda 100
 
-Rating = 0.773 * PTS net + 34.8 * SR net + 5.23 * NT net (net = off minus def). That's projected margin vs an average team on a neutral field. Home field = 3.19 points. Win probability = normal CDF of margin / 16.34.
+Rating = NT net * NT beta + SR net * SR beta + PTS net * PTS beta (net = off minus def), refit each pipeline run so the exact numbers drift slightly; printed by `export2.py` as `beta`. That's projected margin vs an average team on a neutral field. Home field is also refit each run (the 4th beta value), around 3 points. Win probability = normal CDF of margin / sd (also refit, around 16).
+
+The preseason prior gets one more nudge before the season's first ridge fit: each team's CFBD talent composite z-score for the upcoming season, times 0.8 (in std devs of that feature's own net rating), added to offense and subtracted from defense. See `PRESEASON_COEF` in `model.py`.
 
 Play filters: runs, passes and sacks only, FBS vs FBS games only, no kneels, no two point tries, no garbage time (margin over 38 in Q2, 28 in Q3, 22 in Q4).
 
@@ -51,11 +57,13 @@ Raw EPA (`E`) is still solved for display columns, but it's not in the rating.
 
 ## Results so far
 
-Out of sample (2025 and 2026 through Oct 7): average miss 12.62 points, picks 73% of winners. Vegas: 11.74 and 76%. The earlier EPA-only version missed by 12.89.
+Out of sample (2025 and 2026 so far): average miss 12.40 points, picks 73.3% of winners. Vegas: 11.74 and 75.7%. The earlier EPA-only version missed by 12.70.
 
 Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA, adding explosiveness (EPA per successful, turnover-free play) as a fourth rating input. Explosiveness still shows as a display column (`EX` in `FEATS`), its signal is just already inside EPA per play, so it moved test MAE by under 0.01 points.
 
-Checked whether the model's miss size varies by anything, to see if win probability should use a variable standard deviation instead of one flat number. Bucketing by projected margin size: no, std stays flat at 16 to 17 points whether the favorite is up by 2 or up by 35. Bucketing by how many games each team has played so far that season: yes, games where neither team has played yet (pure preseason prior, no in season data) miss by more, std 17.4 vs 16.3, and the prediction is biased too, about 3 points too generous to the favorite on average. `sd_early` in `site_data.json` params captures the std difference; the bias itself is not corrected, that is really the same preseason info gap below, not a separate problem.
+Checked whether the model's miss size varies by anything, to see if win probability should use a variable standard deviation instead of one flat number. Bucketing by projected margin size: no, std stays flat whether the favorite is up by 2 or up by 35. Bucketing by how many games each team has played so far that season: yes, games where neither team has played yet (pure preseason prior, no in season data) used to miss by more and run biased, about 3 points too generous to the favorite on average. `sd_early` in `site_data.json` params captures the std difference.
+
+That preseason bias is mostly fixed now: added each team's CFBD recruiting talent composite (z-scored per season) as a nudge to the preseason prior, tuned by walk-forward backtest on 2015 to 2024 preseason-only games and confirmed on 2025 to 2026 (never touched while tuning, see `/tmp` scratch test script if it still exists, otherwise rerun the same grid search against `model.walk`). Preseason-only MAE went from 15.44 to 14.07 points and the bias nearly vanished, -5.38 to +0.04. Returning production (CFBD's `/player/returning`) was also tried, alone and blended with talent, and made things worse both ways, so it's fetched (`preseason.json` has it) but unused (`PRESEASON_COEF["returning"]` stays 0).
 
 ## The page
 
@@ -65,7 +73,6 @@ The Games tab uses precomputed pregame picks from `site_data.json`. Each past pi
 
 ## Known gaps and next ideas
 
-- Updates are manual: rerun `rebuild.sh` and republish. A daily scheduled rebuild would make the Games tab update like Torvik's.
 - The current season (2026) is hardcoded in `rebuild.sh`, `fetch_data.py`'s default and `export3.py`. Make it one setting before next season.
-- Biggest remaining accuracy gap vs Vegas: preseason info (returning production, transfers, recruiting). The CollegeFootballData API has this but needs a free API key.
+- Preseason recruiting talent is in, returning production is fetched but didn't help. Still not tried: transfers, QB-specific returning production instead of whole-team.
 - Not built yet: remaining Five Factors columns (field position, finishing drives), player stats (QB, rusher and receiver EPA are possible; defenders aren't), projected final records, a wins-above-playoff-team résumé stat.
