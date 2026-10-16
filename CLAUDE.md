@@ -97,7 +97,9 @@ Built in phases on top of the existing model, all client side so it still runs o
 - `compute()` also gives `sos` (average current rating of opponents in range) and `form` (average G-Score, last 3 games), with ranks.
 - Model totals: `model.walk` saves a pregame total (`ptot`: both teams' expected points from the points ridge, only earlier games) and `export3.py` writes `ptot` for every game. Checked 2013 on: unbiased (about −0.2), but the market total is more accurate (2025+: model misses by 13.11, market 12.46) and total edges have not beaten 52.4% at any size, so they're shown as unproven leans.
 - `lines.py` also stores sportsbook moneylines for the current season (`ml`), preferred over Kalshi for implied probability (vig removed).
-- Not available: havoc rate and finishing drives (need new play by play processing), AP rankings ("top 25" means T-Rank top 25).
+- Havoc and finishing drives (phase 6): `build.py` now adds per team-game `hav` (plays with a tackle for loss on a run, sack, interception, forced fumble or pass breakup), `trips` (drives reaching the opponent 40) and `tpts` (offensive points on them, TD 7, FG 3; drive result labels changed over the years, e.g. "RUSHING TD", "FG GOOD", so they're mapped explicitly and defensive scores count 0). `export2.py` appends them to each row (indices 16 to 18). The page solves them as opponent adjusted display stats (`HV` havoc rate, `FD` points per trip, lambdas in `LAMX`). Pass breakups and forced fumbles are barely recorded before about 2014, so havoc compares fairly only within a season. League levels: about 3.6 to 4.0 points per trip, havoc 10 to 13%.
+- Phase 6 also: Finder rows switch to abbreviations and short dates on phones; the Method tab documents the research tools and data rules; page usable in about 1.7 s, a full ratings recompute about 75 ms.
+- Not available: AP rankings ("top 25" means T-Rank top 25).
 
 ## Known gaps and next ideas
 

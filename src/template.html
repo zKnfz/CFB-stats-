@@ -169,6 +169,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .fbox tbody tr.alt:hover td{background:var(--accent-soft)}
 .fbox td{font-size:13px;padding:5px 7px}
 .na{color:var(--muted);opacity:.7}
+.an{display:none}
+@media (max-width:600px){.fbox .fn{display:none}.fbox .an{display:inline}.fbox td,.fbox th{padding:4px 5px}.fbox td{font-size:12px}}
 .hg2{background:var(--good-bg);color:var(--good);font-weight:700}.hg1{color:var(--good);font-weight:600}
 .hr2{background:var(--bad-bg);color:var(--bad);font-weight:700}.hr1{color:var(--bad);font-weight:600}
 .src{display:inline-block;font:700 9px var(--data);letter-spacing:.08em;border-radius:3px;padding:0 4px;vertical-align:1px}
@@ -489,7 +491,9 @@ function solveRidge(rows, ids, num, wkey, lam, priors){
 }
 // Feature: [numerator, weight (null = one per game)]. The model rating blends NT, SR and PTS.
 const FEATS = {E:['epa','plays'], NT:['ent','pnt'], SR:['succ','plays'], PTS:['pts',null], EX:['ex','pex'],
-  PE:['pepa','pp'], RE:['repa','rpl']};  // pass and rush EPA per play: display only, not in the rating
+  PE:['pepa','pp'], RE:['repa','rpl'],   // pass and rush EPA per play: display only, not in the rating
+  HV:['hav','plays'], FD:['tpts','trips']};  // havoc rate and points per trip inside the 40: display only
+const LAMX = {HV:100, FD:10};  // FD is weighted by trips (about 5 a game), so it needs a lighter pull than per play stats
 const MODEL = ['NT','SR','PTS'];
 
 function compute(){
@@ -498,18 +502,20 @@ function compute(){
   const priorSeason = DATA.seasons[seasonOf(state.from)];
   const rows = ALL.rows.filter(r=>r[0]>=state.from && r[0]<=state.to)
     .map(r=>({date:r[0],gid:r[1],off:r[2],def:r[3],loc:r[4],plays:r[5],epa:r[6],succ:r[7],pp:r[8],pepa:r[9],tov:r[10],ent:r[11],pnt:r[12],pts:r[13],ex:r[14],pex:r[15],
-      repa:r[6]-r[9], rpl:r[5]-r[8]}));
+      repa:r[6]-r[9], rpl:r[5]-r[8], hav:r[16]??0, trips:r[17]??0, tpts:r[18]??0}));
   const F = {};
   for (const [f,[num,w]] of Object.entries(FEATS)){
     const pri = state.prior ? ids.map(t=>(priorSeason.prior[t]||{})[f] || [0,0]) : null;  // PE/RE have no stored prior, so they shrink toward average
-    F[f] = solveRidge(rows, ids, num, w, P.lam[f] ?? P.lam.E, pri);
+    F[f] = solveRidge(rows, ids, num, w, P.lam[f] ?? LAMX[f] ?? P.lam.E, pri);
   }
   const confMap = DATA.seasons[inRange[inRange.length-1]].conf;
+  const hasHv = ALL.rows.length && ALL.rows[0].length > 16;  // older builds have no havoc or drive columns
   const teams = ids.map((t,i)=>({id:t, i, name:DATA.teams[t][0], abbr:DATA.teams[t][1], conf:confMap[t]||DATA.teams[t][2], color:DATA.teams[t][3]||'#888',
     adjO:F.E.mu+F.E.o[i], adjD:F.E.mu+F.E.d[i], srO:F.SR.mu+F.SR.o[i], srD:F.SR.mu+F.SR.d[i],
     exO:F.EX.mu+F.EX.o[i], exD:F.EX.mu+F.EX.d[i],
     ptsO:F.PTS.mu+F.PTS.o[i], ptsD:F.PTS.mu+F.PTS.d[i],
     peO:F.PE.mu+F.PE.o[i], peD:F.PE.mu+F.PE.d[i], reO:F.RE.mu+F.RE.o[i], reD:F.RE.mu+F.RE.d[i],
+    hvO:hasHv?F.HV.mu+F.HV.o[i]:null, hvD:hasHv?F.HV.mu+F.HV.d[i]:null, fdO:hasHv?F.FD.mu+F.FD.o[i]:null, fdD:hasHv?F.FD.mu+F.FD.d[i]:null,
     rating: MODEL.reduce((s,f)=>s+P.beta[f]*(F[f].o[i]-F[f].d[i]),0),
     comp: Object.fromEntries(MODEL.map(f=>[f, P.beta[f]*(F[f].o[i]-F[f].d[i])])),  // the rating, split by ingredient
     wins:0, losses:0, gp:0, plays:0, pp:0, give:0, take:0, games:[]}));
@@ -544,6 +550,7 @@ function compute(){
   rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('exO',1); rank('exD',-1); rank('ptsO',1); rank('ptsD',-1);
   rank('sos',1); rank('form',1);
   teams.forEach(t=>t.net=t.adjO-t.adjD); rank('net',1); rank('peO',1); rank('peD',-1); rank('reO',1); rank('reD',-1);
+  rank('hvO',-1); rank('hvD',1); rank('fdO',1); rank('fdD',-1);
   current = {teams, byId, ptsMu: F.PTS.mu, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
     thin: inRange.filter(y=>DATA.coverage[y]<0.95), hasPrior: Object.keys(priorSeason.prior).length>0};
 }
@@ -952,7 +959,12 @@ function renderAbout(){
     </div>
     <p>Vegas still wins by about a point. Most of that gap is information this model never sees: injuries, transfers, coaching changes and returning starters.</p>
     <h2>Data</h2>
-    <p>Play-by-play and EPA from ESPN via the open sportsdataverse / cfbfastR project. Team info from CollegeFootballData.</p>`;
+    <p>Play-by-play and EPA from ESPN via the open sportsdataverse / cfbfastR project. Team info from CollegeFootballData.</p>
+    <h2>Research tools</h2>
+    <p>Game Finder, Edges, Trend Finder and the game and team pages are built on the same ratings. Every number is tagged by where it comes from. <b>Market</b>: sportsbook spreads, totals and moneylines from CollegeFootballData (closing lines for finished games, current lines for upcoming ones), or Kalshi prices when no book moneyline is posted. <b>Model</b>: this site's projections, including a pregame projected total (both teams' opponent adjusted points). <b>Historical</b>: results of finished games against those lines. <b>Derived</b>: things computed from the others, like strength of schedule (average rating of opponents played) and form (average G-Score over the last 3 games).</p>
+    <p>When a market number isn't available it shows N/A rather than an estimate. Every betting trend shows its record, so the sample size is never hidden, and tapping a record (or running a Trend Finder query) lists every game in it. Trend colors only appear when at least 5 games back them.</p>
+    <p>Pregame picks and projected totals for past games used only games played before them. Two things are hindsight on purpose and labeled that way: opponent strength in historical splits (each season's final rating) and the team page's per game G-Score (today's ratings range).</p>
+    <p>How the model compares to the market, honestly: against closing lines, the market is more accurate on both spreads and totals in the 2025+ test years, and no size of disagreement has beaten the 52.4% needed at −110 out of sample. So the site calls these model edges or leans, shows each one's track record, and explains what's driving it, rather than calling them picks. Havoc rate (tackles for loss, sacks, interceptions, forced fumbles, pass breakups) and finishing drives (points per trip past the opponent 40) are opponent adjusted like the other stats; pass breakups and forced fumbles are sparsely recorded in the play by play, so compare havoc within a season.</p>`;
 }
 
 // ---------- games ----------
@@ -1339,8 +1351,8 @@ $('fmkt').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!
   document.querySelectorAll('#fmkt .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
 $('frange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fdays=+b.dataset.days;
   document.querySelectorAll('#frange .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
-$('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
-$('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
+$('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) tmlinkGo(el); });
+$('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) tmlinkGo(el); });
 
 // ---------- research data layer: pure calculations, no DOM ----------
 // Source of every number: MARKET (books via CFBD, or Kalshi), MODEL (this site's pregame projection),
@@ -1502,14 +1514,16 @@ function renderGame(){
     ['Adj points allowed','ptsD',x=>x.toFixed(1),true,'Lower is better'],
     ['Strength of schedule','sos',f1,false,'Average current rating of opponents played in range'],
     ['Form, last 3','form',f1,false,'Average G-Score over the last 3 games in range'],
-    ['Havoc rate',null,null,false,'Not in the processed data yet'],
-    ['Finishing drives',null,null,false,'Not in the processed data yet'],
+    ['Havoc forced, def','hvD',x=>pct(x)+'%',false,'Share of opponent plays ending in a tackle for loss, sack, interception, forced fumble or pass breakup, opponent adjusted. Pass breakups and forced fumbles are sparsely recorded, so compare within a season.'],
+    ['Havoc allowed, off','hvO',x=>pct(x)+'%',true,'Same, suffered by this offense; lower is better'],
+    ['Finishing drives, off','fdO',x=>x.toFixed(2),false,'Points per trip past the opponent 40 (TD counted as 7, FG 3), opponent adjusted'],
+    ['Finishing drives, def','fdD',x=>x.toFixed(2),true,'Points allowed per opponent trip past the 40; lower is better'],
   ];
   const cv = (t, k, f) => !t || t[k]==null ? '<span class="na">N/A</span>' : `${f(t[k])}${t[k+'Rk']?` <span class="r">#${t[k+'Rk']}</span>`:''}`;
   const cmp = `<div class="tablebox"><table class="cmp cmpt"><thead><tr><th class="l"></th><th>${esc(ab(a))}</th><th>${esc(ab(h))}</th></tr></thead><tbody>${
     rows.map(([l,k,f,low,tip])=>{ const va = k&&tA?tA[k]:null, vh = k&&tH?tH[k]:null, wa = va!=null&&vh!=null&&(low?va<vh:va>vh), wh = va!=null&&vh!=null&&(low?vh<va:vh>va);
       return `<tr><td class="l" title="${esc(tip)}">${l}</td><td class="${wa?'win':''}">${k?cv(tA,k,f):'<span class="na">N/A</span>'}</td><td class="${wh?'win':''}">${k?cv(tH,k,f):'<span class="na">N/A</span>'}</td></tr>`; }).join('')
-  }</tbody></table></div><p class="note">Ranks are out of ${n} FBS teams. Bold marks the better side. Havoc and finishing drives need play by play fields this site doesn't process yet.</p>`;
+  }</tbody></table></div><p class="note">Ranks are out of ${n} FBS teams. Bold marks the better side. Hover a stat for its definition.</p>`;
 
   const rangeChips = [['L3','Last 3'],['L5','Last 5'],['L10','Last 10'],['season','Full season'],['custom','Custom']]
     .map(([k,l])=>`<button class="chip" data-gvr="${k}" aria-pressed="${GV.range===k}">${l}</button>`).join('');
@@ -1871,8 +1885,8 @@ function renderFinder(){
     const v = s.v, at = s.neu ? 'vs' : s.home ? 'vs' : '@';
     const mlTxt = s.ml!=null ? `${amTxt(s.ml)} <span class="note">${(s.pMkt*100).toFixed(0)}%</span>` : s.pMkt!=null ? `${s.kc}¢ <span class="note">${(s.pMkt*100).toFixed(0)}% K</span>` : '<span class="na">N/A</span>';
     return `<tr class="${alt?'alt':''}">
-      <td class="l stick">${s.ratingRk?`<span class="rk2">${s.ratingRk}</span> `:''}${teamLinkHtml(s.id)} <span class="note">${at} <span class="tmlink glink" data-gid="${v.gid}" data-side="${s.id}" tabindex="0" role="link">${esc(ab(s.opp))}${s.oppRk?' #'+s.oppRk:''} ›</span></span></td>
-      <td class="l note">${fmtDate(v.date,true)} ${v.tm||'TBA'}</td>
+      <td class="l stick">${s.ratingRk?`<span class="rk2 fn">${s.ratingRk} </span>`:''}${teamLinkHtml(s.id, `<span class="fn">${esc(nm(s.id))}</span><span class="an">${esc(ab(s.id))}</span>`)} <span class="note">${at} <span class="tmlink glink" data-gid="${v.gid}" data-side="${s.id}" tabindex="0" role="link">${esc(ab(s.opp))}<span class="fn">${s.oppRk?' #'+s.oppRk:''}</span> ›</span></span></td>
+      <td class="l note"><span class="fn">${fmtDate(v.date,true)} ${v.tm||'TBA'}</span><span class="an">${v.date.slice(5).replace('-','/')}</span></td>
       <td>${sp(s.spread)}</td><td>${sp(s.model)}</td><td>${edgeCell(s.edge)}</td>
       <td>${naTxt(v.total, x=>x.toFixed(1))}</td><td>${naTxt(v.ptot, x=>x.toFixed(1))}</td><td>${edgeCell(v.totalEdge, v.totalEdge==null?'':v.totalEdge>0?'O':'U')}</td>
       <td>${mlTxt}</td><td>${naTxt(s.pModel, x=>(x*100).toFixed(0)+'%')}</td>

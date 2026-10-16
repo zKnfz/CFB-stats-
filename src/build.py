@@ -7,6 +7,9 @@ DATA = DATA_DIR
 PBP_COLS = ["game_id", "pos_team_id", "def_pos_team_id", "period", "scrimmage_play",
             "kneel_down", "EPA", "EPA_success", "rush", "pass", "type.text", "turnover_vec",
             "pos_score_diff_start", "gameSpread", "homeFavorite"]
+# for havoc rate and finishing drives; older seasons may lack some, which then count as zero
+OPT_COLS = ["sack", "int", "fumble_forced_player_name", "pass_breakup_player_name", "statYardage",
+            "drive.id", "drive.result", "start.yardsToEndzone"]
 # Garbage time (Connelly-style): score margin at snap above these, by quarter
 GARBAGE = {1: 999, 2: 38, 3: 28, 4: 22}
 
@@ -22,7 +25,12 @@ def load_season(year):
     sched = sched[sched.home_id.isin(fbs_ids) & sched.away_id.isin(fbs_ids)]
     sched["date"] = pd.to_datetime(sched.game_date).dt.tz_convert("America/New_York").dt.strftime("%Y-%m-%d")
 
-    p = pd.read_parquet(f"{DATA}/pbp_{year}.parquet", columns=PBP_COLS)
+    import pyarrow.parquet as pq
+    have = set(pq.read_schema(f"{DATA}/pbp_{year}.parquet").names)
+    p = pd.read_parquet(f"{DATA}/pbp_{year}.parquet", columns=PBP_COLS + [c for c in OPT_COLS if c in have])
+    for c in OPT_COLS:
+        if c not in p:
+            p[c] = np.nan
     p = p[p.game_id.isin(sched.game_id)]
     spread = p.groupby("game_id").agg(gs=("gameSpread", "first"), hf=("homeFavorite", "first"))
     spread["home_spread_margin"] = np.where(spread.hf == True, spread.gs, -spread.gs)
@@ -40,12 +48,25 @@ def load_season(year):
     p["ex_nt"] = np.where((p.succ == 1) & ~p.tov, p.EPA, np.nan)  # explosiveness: EPA on turnover-free successes
     p["pos_team_id"] = p.pos_team_id.astype(int)
     p["def_pos_team_id"] = p.def_pos_team_id.astype(int)
+    # havoc (from the offense's side): tackle for loss on a run, sack, interception, forced fumble, pass breakup.
+    # Pass breakups and forced fumbles are sparsely recorded, almost absent before about 2014: compare within a season.
+    p["hav"] = ((p.sack == True) | (p["int"] == True) | p.fumble_forced_player_name.notna() | p.pass_breakup_player_name.notna()
+                | ((p.rush == True) & (pd.to_numeric(p.statYardage, errors="coerce") < 0))).astype(float)
+    # finishing drives: drives that reach the opponent's 40, and points on them (TD counted as 7, FG 3)
+    dr = p.dropna(subset=["drive.id"]).groupby(["game_id", "pos_team_id", "drive.id"]).agg(
+        ytg=("start.yardsToEndzone", "min"), res=("drive.result", "first")).reset_index()
+    dr = dr[pd.to_numeric(dr.ytg, errors="coerce") <= 40]
+    # offensive scores only; labels changed over the years (defensive and return TDs like "INT TD" score 0 here)
+    dr["pts"] = dr.res.map({"TD": 7.0, "RUSHING TD": 7.0, "PASSING TD": 7.0, "FG": 3.0, "FG GOOD": 3.0, "MADE FG": 3.0}).fillna(0.0)
+    trips = dr.groupby(["game_id", "pos_team_id"]).agg(trips=("pts", "size"), tpts=("pts", "sum")).reset_index()
 
     agg = p.groupby(["game_id", "pos_team_id", "def_pos_team_id"]).agg(
         plays=("EPA", "size"), epa=("EPA", "sum"), succ=("succ", "sum"),
         pplays=("is_pass", "sum"), tov=("tov", "sum"), epa_nt=("epa_nt", "sum"), plays_nt=("epa_nt", "count"),
         ex_nt=("ex_nt", "sum"), plays_ex=("ex_nt", "count"),
-        pepa=("EPA", lambda s: s[p.loc[s.index, "is_pass"]].sum())).reset_index()
+        pepa=("EPA", lambda s: s[p.loc[s.index, "is_pass"]].sum()), hav=("hav", "sum")).reset_index()
+    agg = agg.merge(trips, on=["game_id", "pos_team_id"], how="left")
+    agg[["trips", "tpts"]] = agg[["trips", "tpts"]].fillna(0.0)
     agg["rplays"] = agg.plays - agg.pplays
     agg["repa"] = agg.epa - agg.pepa
     agg = agg.merge(sched[["game_id", "date", "week", "season_type", "neutral_site", "home_id", "away_id",
