@@ -205,6 +205,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
 
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-finder" aria-selected="true">Game Finder</button>
+    <button role="tab" id="tab-edges" aria-selected="false">Edges</button>
     <button role="tab" id="tab-ratings" aria-selected="false">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
     <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
@@ -239,6 +240,25 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
     </div>
     <div class="tablebox fbox" style="margin-top:10px"><table id="ft"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="fx-note"></p>
+  </section>
+
+  <section id="p-edges" hidden>
+    <div class="panel">
+      <div class="chips" id="erange" role="group" aria-label="Date range">
+        <button class="chip" data-days="7" aria-pressed="true">Next 7 days</button>
+        <button class="chip" data-days="400" aria-pressed="false">All upcoming</button>
+      </div>
+      <p class="note" style="margin:8px 0 0">Ranked by how far this site's model is from the market. These are model edges, places where the model disagrees, not picks: in recent seasons that disagreement has not beaten closing lines, and each row shows how its edge size has done in 2025+ games. The "why" column splits the model's margin into its ingredients from the current ratings.</p>
+    </div>
+    <h3 class="sec">Watchlist</h3>
+    <div class="tablebox"><table class="tlog" id="wlg2"><thead></thead><tbody></tbody></table></div>
+    <h3 class="sec">Spread edges</h3>
+    <div class="tablebox fbox"><table class="tlog" id="es"><thead></thead><tbody></tbody></table></div>
+    <h3 class="sec">Total edges</h3>
+    <div class="tablebox fbox"><table class="tlog" id="et"><thead></thead><tbody></tbody></table></div>
+    <h3 class="sec">Moneyline edges</h3>
+    <div class="tablebox fbox"><table class="tlog" id="em"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="enote"></p>
   </section>
 
   <section id="p-ratings" hidden>
@@ -368,6 +388,8 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
       <th class="l">Pick</th><th>Model %</th><th>Market %</th><th>Edge</th><th class="l"></th>
     </tr></thead><tbody></tbody></table></div>
     <p class="note">Saved on this device only, in this browser. Sorted by edge, highest first.</p>
+    <h3 class="sec">Saved games</h3>
+    <div class="tablebox"><table class="tlog" id="wlg"><thead></thead><tbody></tbody></table></div>
   </section>
 
   <section id="p-game" hidden><div id="gv"></div></section>
@@ -420,7 +442,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
-const TABS = ['finder','ratings','games','feed','tf','matchup','game','team','backtest','about'];
+const TABS = ['finder','edges','ratings','games','feed','tf','matchup','game','team','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -489,6 +511,7 @@ function compute(){
     ptsO:F.PTS.mu+F.PTS.o[i], ptsD:F.PTS.mu+F.PTS.d[i],
     peO:F.PE.mu+F.PE.o[i], peD:F.PE.mu+F.PE.d[i], reO:F.RE.mu+F.RE.o[i], reD:F.RE.mu+F.RE.d[i],
     rating: MODEL.reduce((s,f)=>s+P.beta[f]*(F[f].o[i]-F[f].d[i]),0),
+    comp: Object.fromEntries(MODEL.map(f=>[f, P.beta[f]*(F[f].o[i]-F[f].d[i])])),  // the rating, split by ingredient
     wins:0, losses:0, gp:0, plays:0, pp:0, give:0, take:0, games:[]}));
   const byId = new Map(teams.map(t=>[t.id,t]));
   // records + game logs
@@ -521,7 +544,7 @@ function compute(){
   rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('exO',1); rank('exD',-1); rank('ptsO',1); rank('ptsD',-1);
   rank('sos',1); rank('form',1);
   teams.forEach(t=>t.net=t.adjO-t.adjD); rank('net',1); rank('peO',1); rank('peD',-1); rank('reO',1); rank('reD',-1);
-  current = {teams, byId, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
+  current = {teams, byId, ptsMu: F.PTS.mu, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
     thin: inRange.filter(y=>DATA.coverage[y]<0.95), hasPrior: Object.keys(priorSeason.prior).length>0};
 }
 
@@ -586,6 +609,9 @@ function gameLog(t){
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function fmtDate(d,short){ const x=new Date(d+'T12:00:00'); return x.toLocaleDateString('en-US',short?{month:'short',day:'numeric'}:{month:'short',day:'numeric',year:'numeric'}); }
 
+// expected points, additive like the ridge model: league average + own offense + opponent defense
+// (ptsO and ptsD already include the average once, so subtract it once). Matches the pregame totals.
+const expPts = (t, opp) => t.ptsO + opp.ptsD - current.ptsMu;
 function normCdf(z){ // Abramowitz-Stegun
   const t=1/(1+0.2316419*Math.abs(z)), d=0.3989423*Math.exp(-z*z/2);
   const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
@@ -602,7 +628,7 @@ function renderMatchup(){
   const sd = (A.gp===0 || B.gp===0) ? P.sd_early : P.sd;
   const pA = normCdf(margin/sd);
   const fav = margin>=0?A:B, dog = margin>=0?B:A, m = Math.abs(margin);
-  const total = (A.ptsO+B.ptsD)/2 + (B.ptsO+A.ptsD)/2;
+  const total = expPts(A,B) + expPts(B,A);
   const favScore = Math.round((total+m)/2), dogScore = Math.round((total-m)/2);
   const wb = +$('wbSel').value, pWb = normCdf((m-wb)/sd);
   const row = (lbl,a,b,fmt,lowGood)=>{ const better = lowGood? (a<b?'a':'b') : (a>b?'a':'b');
@@ -991,7 +1017,7 @@ function renderGames(){
     if (!done && pred!==null && current) {
       const favT = current.byId.get(fav), dogT = current.byId.get(dog);
       if (favT && dogT) {
-        const total = (favT.ptsO+dogT.ptsD)/2 + (dogT.ptsO+favT.ptsD)/2;
+        const total = expPts(favT,dogT) + expPts(dogT,favT);
         scoreTxt = ` ${Math.round((total+Math.abs(pred))/2)}-${Math.round((total-Math.abs(pred))/2)}`;
       }
     }
@@ -1454,7 +1480,7 @@ function renderGame(){
       ${key('Model win','m', v.pModelH==null?'<span class="na">N/A</span>':`${esc(ab(v.pModelH>=0.5?h:a))} ${(Math.max(v.pModelH,1-v.pModelH)*100).toFixed(1)}%`, mkPct==null?'no market price':`market ${esc(ab(mkPct>=0.5?h:a))} ${(Math.max(mkPct,1-mkPct)*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`)}
     </div>
     <p class="note" style="margin:8px 0 0">${esc(cS.txt)} ${esc(cT.txt)}</p>
-    <div class="chips" style="margin-top:10px"><button class="chip" id="gvMatch" type="button">Line history, situations, head to head ›</button><button class="chip" id="gvSave" type="button">+ Watchlist</button></div>
+    <div class="chips" style="margin-top:10px"><button class="chip" id="gvMatch" type="button">Line history, situations, head to head ›</button><button class="chip" id="gvSave" type="button">${wlHas(v.gid)?'★ On watchlist':'+ Watchlist'}</button></div>
   </div>`;
 
   // team comparison, raw value and national rank, ratings from the selected range
@@ -1699,6 +1725,82 @@ function tfInit(){
   $('tf-more').addEventListener('click', ()=>{ tfShown += 200; renderTF(); });
 }
 
+// ---------- Edges dashboard ----------
+let edays = 7;
+const TOTSD = (()=>{ const T = DATA.tot||{}, PT = DATA.ptot||{}; let ss=0, n=0;  // spread of real totals around the model's projection
+  for (const g of DATA.games){ if (g[6]===null) continue; const pt = PT[g[0]]; if (pt==null || T[g[0]]==null) continue; const r = g[6]+g[7]-pt; ss += r*r; n++; }
+  return n ? Math.sqrt(ss/n) : 17; })();
+function whyMargin(v){  // the model's home margin split by ingredient, from the current ratings
+  const tH = current && current.byId.get(v.h), tA = current && current.byId.get(v.a); if (!tH || !tA) return '<span class="na">N/A</span>';
+  const parts = MODEL.map(f=>[f, tH.comp[f]-tA.comp[f]]); if (!v.neu) parts.push(['HFA', P.hfa]);
+  const name = {NT:'EPA/play', SR:'success rate', PTS:'points', HFA:'home field'};
+  return parts.sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(([f,x])=>`${name[f]} <b>${esc(ab(x>=0?v.h:v.a))} +${Math.abs(x).toFixed(1)}</b>`).join(', ');
+}
+function edgeRows(kind){
+  const today = todayET(), end = addDays(today, edays), out = [];
+  for (const g of DATA.games){ if (g[6]!==null || g[1]<today || g[1]>end) continue; const v = gameView(g);
+    if (kind==='spread' && v.spreadEdge!=null){ const side = v.spreadEdge>0 ? v.h : v.a, sg = side===v.h ? 1 : -1;
+      out.push({v, side, e: Math.abs(v.spreadEdge), mkt: spreadTxt(-sg*v.spread), model: spreadTxt(-sg*v.pred), pModel: normCdf(Math.abs(v.spreadEdge)/sdFor(g)), pMkt: 0.5, conf: confidence('spread', v.spreadEdge)}); }
+    if (kind==='total' && v.totalEdge!=null){ const over = v.totalEdge>0;
+      out.push({v, side: over?'Over':'Under', e: Math.abs(v.totalEdge), mkt: `${over?'Over':'Under'} ${v.total}`, model: v.ptot.toFixed(1), pModel: normCdf(Math.abs(v.totalEdge)/TOTSD), pMkt: 0.5, conf: confidence('total', v.totalEdge)}); }
+    if (kind==='ml' && v.pMktH!=null && v.pModelH!=null){ const dH = v.pModelH - v.pMktH, side = dH>=0 ? v.h : v.a, pm = side===v.h ? v.pModelH : 1-v.pModelH, pk = side===v.h ? v.pMktH : 1-v.pMktH;
+      const price = v.mktSrc==='book' ? amTxt(side===v.h ? v.mlH : v.mlA) : `${side===v.h?v.kh:v.ka}¢ K`;
+      out.push({v, side, e: Math.abs(dH)*100, mkt: price, model: `${(pm*100).toFixed(1)}%`, pModel: pm, pMkt: pk, conf: {lbl:'Untested', cls:'na', txt:'No history of moneylines to test this against; sportsbook moneylines are only stored for the current season.'}}); } }
+  return out.sort((a,b)=>b.e-a.e);
+}
+function renderEdges(){
+  if (!current) return;
+  const head = (cols) => `<tr>${cols.map(([l,t,c])=>`<th class="${c||''}" title="${esc(t||'')}">${l}</th>`).join('')}</tr>`;
+  const row = (r, cells) => `<tr><td class="l"><span class="tmlink glink" data-gid="${r.v.gid}" tabindex="0" role="link">${esc(ab(r.v.a))} ${r.v.neu?'vs':'@'} ${esc(ab(r.v.h))} ›</span> <span class="note">${fmtDate(r.v.date,true)}</span></td>${cells}<td><span class="cell ${r.conf.cls}" title="${esc(r.conf.txt)}">${r.conf.lbl}</span></td><td><button class="btn wlAdd" data-gid="${r.v.gid}" type="button" style="min-height:0;padding:2px 8px">${wlHas(r.v.gid)?'★':'☆'}</button></td></tr>`;
+  const empty = n => `<tr><td colspan="${n}" class="empty">No upcoming games with both a market line and a model number in this range.</td></tr>`;
+  const S = edgeRows('spread');
+  $('es').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','Side the model likes more than the market','l'],['Market','Current or closing spread for that side'],['Model','Model spread for that side'],['Edge','Points of disagreement'],['Model cover','Raw model chance this side covers (normal spread around the projection). Unshrunk, so it runs high.'],['Break even','At −110'],['Why the model leans','Model margin split by ingredient, current ratings','l'],['Track record','How this edge size has done in 2025+ games'],['','Save to watchlist']]);
+  $('es').querySelector('tbody').innerHTML = S.length ? S.map(r=>row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${edgeCell(r.e)}</td><td>${(r.pModel*100).toFixed(1)}%</td><td class="note">52.4%</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`)).join('') : empty(10);
+  const T = edgeRows('total');
+  $('et').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','','l'],['Market','Sportsbook total'],['Model','Pregame projected total'],['Edge','Points of disagreement'],['Model chance','Raw model chance that side hits, using how far real totals land from the projection'],['Break even','At −110'],['Projected scores','Each team\'s expected points from the points ratings','l'],['Track record','How this edge size has done in 2025+ games'],['','']]);
+  $('et').querySelector('tbody').innerHTML = T.length ? T.map(r=>{ const tH = current.byId.get(r.v.h), tA = current.byId.get(r.v.a);
+    const proj = tH && tA ? `${esc(ab(r.v.a))} ${expPts(tA,tH).toFixed(1)}, ${esc(ab(r.v.h))} ${expPts(tH,tA).toFixed(1)} <span class="note">(current ratings)</span>` : '<span class="na">N/A</span>';
+    return row(r, `<td class="l"><b>${r.side}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${edgeCell(r.e)}</td><td>${(r.pModel*100).toFixed(1)}%</td><td class="note">52.4%</td><td class="l">${proj}</td>`); }).join('') : empty(10);
+  const M = edgeRows('ml');
+  $('em').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','','l'],['Price','Sportsbook moneyline, or Kalshi (K) when no book line'],['Model win','Model win probability'],['Market','No vig implied probability'],['Edge','Model minus market, percentage points'],['Projected value','Expected return per $1 at this price if the model\'s probability were right (Kalshi before fees)'],['Why the model leans','','l'],['Track record',''],['','']]);
+  $('em').querySelector('tbody').innerHTML = M.length ? M.map(r=>{ const price = r.v.mktSrc==='book' ? (side=>{ const o = side===r.v.h ? r.v.mlH : r.v.mlA; return o>0 ? 1+o/100 : 1+100/(-o); })(r.side) : 1/((r.side===r.v.h?r.v.kh:r.v.ka)/100);
+    const pv = r.pModel*price - 1;
+    return row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${(r.pMkt*100).toFixed(1)}%</td><td>${edgeCell(r.e)}</td><td>${sgnPct(pv)}</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`); }).join('') : empty(10);
+  $('enote').innerHTML = `Model cover and model chance are the raw model's own numbers. The Trends tab's fair odds, which keep only the share of the model that has held up against closing lines, are about 50% for every spread right now. Totals spread: real scores land about ${TOTSD.toFixed(1)} points from the projected total on average (root mean square).`;
+  renderWLG();
+}
+
+// ---------- watchlist: saved games, alongside the original saved picks ----------
+const wlGames = () => loadWL().filter(p=>p.type==='game');
+const wlHas = gid => wlGames().some(p=>p.gid===gid);
+function wlSaveGame(gid){
+  const list = loadWL(), i = list.findIndex(p=>p.type==='game' && p.gid===gid);
+  if (i>=0) list.splice(i,1);
+  else { const g = DATA.games.find(x=>x[0]===gid); if (!g) return; const v = gameView(g);
+    list.push({type:'game', gid, saved: todayET(), spread: v.spread, total: v.total, pModelH: v.pModelH, label: `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`}); }
+  saveWL(list); renderWLG(); if (!$('p-edges').hidden) renderEdges(); if (!$('p-game').hidden) renderGame();
+}
+function renderWLG(){
+  const items = wlGames();
+  const head = `<tr><th class="l">Game</th><th title="Spread when saved, then now (home team's number)">Spread saved → now</th><th>Model</th><th>Edge</th><th>Total saved → now</th><th>Model total</th><th>Model win</th><th class="l">Result</th><th></th></tr>`;
+  const body = items.length ? items.map(p=>{ const g = DATA.games.find(x=>x[0]===p.gid);
+    if (!g) return `<tr><td class="l">${esc(p.label)}</td><td colspan="7" class="na">No longer in the data</td><td><button class="btn wlAdd" data-gid="${p.gid}" type="button">Remove</button></td></tr>`;
+    const v = gameView(g), hsp = x => x==null ? 'N/A' : `${esc(ab(v.h))} ${spreadTxt(-x)}`, mv = p.spread!=null && v.spread!=null && p.spread!==v.spread;
+    const res = v.done ? (()=>{ const m = g[6]-g[7], side = v.spreadEdge==null ? null : (v.spreadEdge>0?1:-1), c = v.spread==null||side==null ? null : Math.sign(side*(m-v.spread));
+      return `${esc(ab(v.a))} ${g[7]}, ${esc(ab(v.h))} ${g[6]}${c==null?'':` · model side <span class="${c>0?'W':c<0?'L':''}">${c>0?'covered':c<0?'missed':'pushed'}</span>`}`; })() : '<span class="note">upcoming</span>';
+    return `<tr><td class="l"><span class="tmlink glink" data-gid="${v.gid}" tabindex="0" role="link">${esc(p.label)} ›</span> <span class="note">${fmtDate(v.date,true)}, saved ${fmtDate(p.saved,true)}</span></td>
+      <td>${hsp(p.spread)}${mv?` → <b>${spreadTxt(-v.spread)}</b>`:p.spread==null&&v.spread!=null?` → ${spreadTxt(-v.spread)}`:''}</td>
+      <td>${v.pred==null?'N/A':hsp(v.pred)}</td><td>${v.spreadEdge==null?'<span class="na">N/A</span>':`${esc(ab(v.spreadEdge>0?v.h:v.a))} ${edgeCell(Math.abs(v.spreadEdge))}`}</td>
+      <td>${p.total ?? 'N/A'}${v.total!=null && p.total!==v.total?` → <b>${v.total}</b>`:''}</td><td>${naTxt(v.ptot, x=>x.toFixed(1))}</td>
+      <td>${v.pModelH==null?'N/A':`${esc(ab(v.pModelH>=0.5?v.h:v.a))} ${(Math.max(v.pModelH,1-v.pModelH)*100).toFixed(0)}%`}</td><td class="l">${res}</td>
+      <td><button class="btn wlAdd" data-gid="${v.gid}" type="button" style="min-height:0;padding:2px 8px">Remove</button></td></tr>`; }).join('')
+    : '<tr><td colspan="9" class="empty">No saved games. Tap ☆ in Game Finder or Edges, or + Watchlist on a game.</td></tr>';
+  for (const id of ['wlg','wlg2']){ $(id).querySelector('thead').innerHTML = head; $(id).querySelector('tbody').innerHTML = body; }
+}
+document.addEventListener('click', e=>{ const b = e.target.closest('.wlAdd'); if (b){ wlSaveGame(+b.dataset.gid); if (!$('p-finder').hidden) renderFinder(); } });
+$('erange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; edays=+b.dataset.days;
+  document.querySelectorAll('#erange .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderEdges(); });
+
 // ---------- Game Finder ----------
 const FX = {sort:'date', dir:1};
 const FX_DEFAULT = () => ({'fx-from': todayET(), 'fx-to': addDays(todayET(), 7)});
@@ -1722,6 +1824,7 @@ const FCOLS = [  // key, label, group, tooltip, sort value
   ['off','Off','MODEL', 'Adjusted offensive EPA per play, with rank', s=>s.off],
   ['def','Def','MODEL', 'Adjusted defensive EPA per play allowed (lower is better), with rank', s=>s.def==null?null:-s.def],
   ['form','Form','DERIVED', 'Average opponent adjusted G-Score over the last 3 games, in rating points. Above the rating means trending up.', s=>s.form],
+  ['watch','☆','', 'Save this game to your watchlist (this device only)', s=>wlHas(s.v.gid)?1:0],
 ];
 function finderSides(){
   const from = $('fx-from').value || todayET(), to = $('fx-to').value || '9999';
@@ -1775,7 +1878,8 @@ function renderFinder(){
       <td>${mlTxt}</td><td>${naTxt(s.pModel, x=>(x*100).toFixed(0)+'%')}</td>
       <td>${trendCell(s.pr.atsSeason)}</td><td>${trendCell(s.pr.atsL5)}</td><td>${trendCell(s.pr.ouSeason)}</td><td>${trendCell(s.pr.ouL5)}</td>
       <td>${naTxt(s.sos, f1)}${rkTxt(s.sosRk)}</td><td><b>${naTxt(s.rating, f1)}</b>${rkTxt(s.ratingRk)}</td>
-      <td>${naTxt(s.off, f3)}${rkTxt(s.offRk)}</td><td>${naTxt(s.def, f3)}${rkTxt(s.defRk)}</td><td>${naTxt(s.form, f1)}${rkTxt(s.formRk)}</td></tr>`; }).join('')
+      <td>${naTxt(s.off, f3)}${rkTxt(s.offRk)}</td><td>${naTxt(s.def, f3)}${rkTxt(s.defRk)}</td><td>${naTxt(s.form, f1)}${rkTxt(s.formRk)}</td>
+      <td><button class="btn wlAdd" data-gid="${v.gid}" type="button" style="min-height:0;padding:1px 7px" aria-label="Save game to watchlist">${wlHas(v.gid)?'★':'☆'}</button></td></tr>`; }).join('')
     : `<tr><td colspan="${FCOLS.length}" class="empty">No games match these filters. ${all.length?'Try widening them or tap Reset.':'No upcoming games in this date range.'}</td></tr>`;
   const games = new Set(rows.map(s=>s.v.gid)).size, lined = all.filter(s=>s.spread!=null).length/2, n = all.length/2;
   $('fx-sum').innerHTML = `${games} game${games===1?'':'s'} shown (${rows.length} team rows) of ${n} in this date range. ${lined} have a posted spread; books usually post about a week out, so later games show N/A until then.`;
@@ -1817,7 +1921,7 @@ function syncControls(){
   $('conf').innerHTML = ['All',...confs].map(c=>`<option ${c===state.conf?'selected':''}>${esc(c)}</option>`).join('');
   $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
 }
-function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
+function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); renderEdges(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
 function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; }
   if (t==='tf' && !TFS) renderTF(); }
 // one handler for team and game links anywhere on the page
@@ -1848,14 +1952,13 @@ for (const id of ['site','wbSel']) $(id).addEventListener('change', renderMatchu
 for (const id of ['mktA','mktB','lineA']) $(id).addEventListener('input', renderMatchup);
 for (const id of ['ta','tb']) $(id).addEventListener('change', ()=>{ muDate = null; muPred = null; $('lineA').value = ''; renderMatchup(); });
 
-function wlSaveGame(gid){ alert('Saving games to the watchlist arrives with the watchlist upgrade.'); }
 function loadWL(){ try{ return JSON.parse(localStorage.getItem('gtr_wl')||'[]'); }catch(e){ return []; } }
 function saveWL(list){ try{ localStorage.setItem('gtr_wl', JSON.stringify(list)); }catch(e){} }
 function renderWL(){
-  const list = loadWL();
+  const list = loadWL().map((p,i)=>({...p,i})).filter(p=>p.type!=='game');
   const tb = document.querySelector('#wl tbody');
   if (!list.length){ tb.innerHTML = '<tr><td colspan="5" class="empty">No saved picks yet.</td></tr>'; return; }
-  const sorted = list.map((p,i)=>({...p,i})).sort((a,b)=>b.edge-a.edge);
+  const sorted = list.sort((a,b)=>b.edge-a.edge);
   tb.innerHTML = sorted.map(p=>`<tr>
     <td class="l">${esc(p.label)}</td><td>${p.modelPct.toFixed(1)}%</td><td>${p.marketPct.toFixed(1)}%</td>
     <td style="color:${p.edge>=0?'var(--good)':'var(--bad)'}">${p.edge>=0?'+':''}${p.edge.toFixed(1)}</td>
