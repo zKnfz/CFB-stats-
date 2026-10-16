@@ -155,6 +155,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 #gv .tablebox{max-width:760px}
 .cmpt td.win{font-weight:700}
 .aud{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.tlog td,.tlog th{font-size:13px;padding:5px 7px}
+.tlog tr.up td{color:var(--muted)}
 .chartrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .fbox{max-height:72vh;overflow:auto}
 .fbox th{top:0;z-index:3}
@@ -185,7 +187,9 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
       <h1>Gridiron <span>T-Rank</span></h1>
       <p class="sub">Opponent-adjusted efficiency for FBS football. EPA per play, garbage time removed, FBS vs FBS games only.</p>
     </div>
-    <div class="asof" id="asof"></div>
+    <div style="display:flex;gap:14px;align-items:flex-end">
+      <input type="search" id="gsearch" list="teamlist" placeholder="Search teams" aria-label="Search teams" autocomplete="off" style="width:190px">
+      <div class="asof" id="asof"></div></div>
   </header>
 
   <section class="controls" aria-label="Filters">
@@ -206,6 +210,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
     <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
     <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
     <button role="tab" id="tab-game" aria-selected="false" hidden>Game</button>
+    <button role="tab" id="tab-team" aria-selected="false" hidden>Team</button>
     <button role="tab" id="tab-backtest" aria-selected="false">Backtest</button>
     <button role="tab" id="tab-about" aria-selected="false">Method</button>
   </nav>
@@ -255,7 +260,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
       <th data-k="pace" title="Non-garbage offensive plays per game">Plays/G</th>
       <th data-k="passr" title="Share of offensive plays that are passes">Pass%</th>
     </tr></thead><tbody></tbody></table></div>
-    <p class="note">Tap a team for its game log. G-Score is that game's performance in points vs an average team, adjusted for the opponent.</p>
+    <p class="note">Tap a row for its game log, or a team name for its research page. G-Score is that game's performance in points vs an average team, adjusted for the opponent.</p>
   </section>
 
   <section id="p-games" hidden>
@@ -332,6 +337,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
   </section>
 
   <section id="p-game" hidden><div id="gv"></div></section>
+  <section id="p-team" hidden><div id="tv"></div></section>
 
   <section id="p-backtest" hidden>
     <div class="controls">
@@ -380,7 +386,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
-const TABS = ['finder','ratings','games','feed','matchup','game','backtest','about'];
+const TABS = ['finder','ratings','games','feed','matchup','game','team','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -510,7 +516,7 @@ function renderTable(){
   tb.innerHTML = list.map(t=>{
     let row = `<tr class="team" data-id="${t.id}" tabindex="0">
       <td class="l rk">${t.ratingRk}</td>
-      <td class="l tm stick"><span class="sw" style="background:${t.color}"></span>${esc(t.name)}</td>
+      <td class="l tm stick"><span class="sw" style="background:${t.color}"></span>${teamLinkHtml(t.id, esc(t.name))}</td>
       <td class="l">${esc(t.conf)}</td>
       <td>${t.wins}-${t.losses}</td>
       <td class="rating"><span class="cell" style="${tint(t.ratingRk,n)}">${f1(t.rating)}</span></td>
@@ -537,7 +543,7 @@ function gameLog(t){
   if (!t.games.length) return '<span class="note">No games in this range.</span>';
   return `<div style="overflow-x:auto"><table class="logt"><thead><tr><th class="l">Date</th><th class="l">Opponent</th><th class="l">Result</th><th>Off EPA/pl</th><th>Def EPA/pl</th><th>G-Score</th></tr></thead><tbody>${
     t.games.map(g=>`<tr><td class="l">${fmtDate(g.date,!current.multi)}</td>
-      <td class="l">${g.loc===1?'vs':g.loc===-1?'at':'n'} ${esc(g.opp.name)} <span class="r">#${g.opp.ratingRk}</span></td>
+      <td class="l">${g.loc===1?'vs':g.loc===-1?'at':'n'} ${teamLinkHtml(g.opp.id, esc(g.opp.name))} <span class="r">#${g.opp.ratingRk}</span></td>
       <td class="l"><span class="${g.ms>g.os?'W':'L'}">${g.ms>g.os?'W':'L'}</span> ${g.ms}-${g.os}</td>
       <td>${f3(g.offE)}</td><td>${f3(g.defE)}</td>
       <td><span class="cell" style="${g.g>=10?'background:var(--good-bg)':g.g<=-10?'background:var(--bad-bg)':''}">${f1(g.g)}</span></td></tr>`).join('')
@@ -1217,7 +1223,7 @@ function insightHtml(ins, g, b){
     : ins.mkt==='ats' ? `, ${ins.avg>=0?'beating':'missing'} the line by ${Math.abs(ins.avg).toFixed(1)} on average` : `, by ${ins.avg.toFixed(1)} points on average`;
   const sig = signalCheck(ins), pill = sig.slice(0, sig.indexOf('</span>')+7), rest = sig.slice(sig.indexOf('</span>')+7);
   return `<div class="icard">
-    <div class="ih"><b><span class="dot" style="background:${color}"></span>${esc(nm(ins.id))}</b>
+    <div class="ih"><b><span class="dot" style="background:${color}"></span>${teamLinkHtml(ins.id)}</b>
       <span class="note tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
     <div class="it">${esc(ins.text)}${avgTxt}.${ins.tag?`<span class="note" style="font-weight:400">${esc(ins.tag)}</span>`:''}</div>
     ${ins.rates ? `<div class="rates">${[['L5',ins.rates.L5],['L10',ins.rates.L10],['L20',ins.rates.L20],[seasonOf(date),ins.rates.season],['H2H',ins.rates.h2h]].filter(([,r])=>r&&r.n).map(([l,r])=>{
@@ -1364,17 +1370,22 @@ function auditTable(list, kind){  // every game behind a trend, so the number ca
         <td>${kind==='ou'?x.exp.toFixed(1):spreadTxt(-x.exp)}</td><td>${kind==='ou'?x.margin:f1(x.margin)}</td><td class="${x.cover>0?'W':x.cover<0?'L':''}">${r}</td></tr>`; }).join('')
   }</tbody></table></div>`;
 }
-function gscoreChart(t){  // diverging bars: each game's opponent adjusted performance, in rating points
-  const gs = t ? t.games.slice(-10) : []; if (!gs.length) return '<p class="note">No games in this range.</p>';
-  const W = 300, H = 120, pad = 18, bw = Math.min(22, (W-8)/gs.length - 2), mx = Math.max(20, ...gs.map(g=>Math.abs(g.g))), y0 = H/2;
-  const bars = gs.map((g,i)=>{ const x = 4 + i*((W-8)/gs.length) + ((W-8)/gs.length - bw)/2, hgt = Math.max(1, Math.abs(g.g)/mx*(H/2-pad)), up = g.g>=0;
-    const y = up ? y0-hgt : y0, r = Math.min(4, bw/2, hgt);
+function divBars(items, aria, minScale=20){  // diverging bars around zero; items: {lab, val, tip}
+  if (!items.length) return '<p class="note">No games in this range.</p>';
+  const W = Math.max(300, items.length*26), H = 120, pad = 18, slot = (W-8)/items.length, bw = Math.min(22, slot-2), mx = Math.max(minScale, ...items.map(i=>Math.abs(i.val))), y0 = H/2;
+  const bars = items.map((it,i)=>{ const x = 4 + i*slot + (slot-bw)/2, hgt = Math.max(1, Math.abs(it.val)/mx*(H/2-pad)), up = it.val>=0, r = Math.min(4, bw/2, hgt);
+    const y = up ? y0-hgt : y0;
     const path = up ? `M${x},${y0} V${y+r} Q${x},${y} ${x+r},${y} H${x+bw-r} Q${x+bw},${y} ${x+bw},${y+r} V${y0} Z`
                     : `M${x},${y0} V${y+hgt-r} Q${x},${y+hgt} ${x+r},${y+hgt} H${x+bw-r} Q${x+bw},${y+hgt} ${x+bw},${y+hgt-r} V${y0} Z`;
-    return `<g><path d="${path}" fill="var(${up?'--good':'--bad'})"><title>${fmtDate(g.date)} ${g.loc===1?'vs':g.loc===-1?'at':'vs'} ${g.opp.name}: ${g.ms}-${g.os}, G-Score ${f1(g.g)}</title></path>
-      <text x="${x+bw/2}" y="${H-2}" font-size="9" text-anchor="middle" fill="var(--muted)">${esc(g.opp.abbr)}</text></g>`; }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:420px;display:block" role="img" aria-label="${esc(t.name)} G-Score by game, last ${gs.length} games in range">
-    <line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="var(--chalk)" stroke-width="1"/>${bars}</svg>`;
+    return `<g><rect x="${4+i*slot}" y="0" width="${slot}" height="${H}" fill="transparent"><title>${esc(it.tip)}</title></rect>
+      <path d="${path}" fill="var(${up?'--good':'--bad'})" pointer-events="none"/>
+      <text x="${x+bw/2}" y="${H-2}" font-size="9" text-anchor="middle" fill="var(--muted)">${esc(it.lab)}</text></g>`; }).join('');
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="${W>420?W:'100%'}" style="max-width:${W>420?W+'px':'420px'};display:block" role="img" aria-label="${esc(aria)}">
+    <line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="var(--chalk)" stroke-width="1"/>${bars}</svg></div>`;
+}
+function gscoreChart(t){  // each game's opponent adjusted performance, in rating points
+  const gs = t ? t.games.slice(-10) : [];
+  return divBars(gs.map(g=>({lab:g.opp.abbr, val:g.g, tip:`${fmtDate(g.date)} ${g.loc===-1?'at':'vs'} ${g.opp.name}: ${g.ms}-${g.os}, G-Score ${f1(g.g)}`})), `${t?t.name:''} G-Score by game`);
 }
 function renderGame(){
   const box = $('gv'), g = DATA.games.find(x=>x[0]===GV.gid);
@@ -1458,6 +1469,104 @@ $('gv').addEventListener('click', e=>{
   if (e.target.id==='gvSave') wlSaveGame(GV.gid);
 });
 $('gv').addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest('[data-aud]')) e.target.click(); });
+
+// ---------- Team Research view ----------
+let TV = {id:null, season:null, period:'season', from:'', to:''};
+let ROWIDX = null;  // team-game stat rows by game and offense, built once
+function teamRow(gid, off){ if (!ROWIDX){ ROWIDX = new Map(); for (const r of ALL.rows) ROWIDX.set(r[1]+':'+r[2], r); } return ROWIDX.get(gid+':'+off); }
+function teamSeasonLog(id, y){  // every game (finished and upcoming) in a season, from this team's side
+  const T = DATA.tot||{}, PT = DATA.ptot||{};
+  return DATA.games.filter(g=>(g[3]===id||g[4]===id) && seasonOf(g[1])===y).sort((a,b)=>a[1]<b[1]?-1:1).map(g=>{
+    const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, home = id===h, opp = home?a:h, done = hs!==null;
+    const us = done?(home?hs:as):null, them = done?(home?as:hs):null, spread = veg==null?null:(home?-veg:veg), tot = T[gid] ?? null;
+    const ro = teamRow(gid, id), rd = teamRow(gid, opp);
+    return {g, gid, date, tm, home, neu, opp, done, us, them, spread, tot, model: pred==null?null:(home?-pred:pred), ptot: PT[gid] ?? null,
+      cover: done && spread!=null ? Math.sign((us-them)+spread) : null, ou: done && tot!=null ? Math.sign(us+them-tot) : null,
+      offE: ro&&ro[5] ? ro[6]/ro[5] : null, offSR: ro&&ro[5] ? ro[7]/ro[5] : null, offEX: ro&&ro[15] ? ro[14]/ro[15] : null, defE: rd&&rd[5] ? rd[6]/rd[5] : null }; });
+}
+function openTeam(id, push=true){
+  if (!DATA.teams[id]) return;
+  const seasons = SEASONS.filter(y=>DATA.seasons[y].teams.includes(id));
+  if (TV.id!==id){ TV = {id, season: seasons.includes(state.season) ? state.season : seasons[seasons.length-1], period:'season', from:'', to:''}; }
+  $('tab-team').hidden = false; $('tab-team').textContent = ab(id); showTab('team'); renderTeam(); window.scrollTo({top:0});
+  if (push) history.pushState(null, '', '#team/'+id);
+}
+function renderTeam(){
+  const id = TV.id, y = TV.season, t = current && current.byId.get(id), inRange = t && seasonsIn(state.from, state.to).includes(y);
+  const seasons = SEASONS.filter(x=>DATA.seasons[x].teams.includes(id)).reverse();
+  const log = teamSeasonLog(id, y), done = log.filter(x=>x.done);
+  let sel = done;
+  if (TV.period[0]==='L') sel = done.slice(-(+TV.period.slice(1)));
+  if (TV.period==='custom') sel = done.filter(x=>(!TV.from || x.date>=TV.from) && (!TV.to || x.date<=TV.to));
+  const su = rate(sel, x=>x.us-x.them), at = rate(sel.filter(x=>x.cover!=null), x=>x.cover), ou = rate(sel.filter(x=>x.ou!=null), x=>x.ou);
+  const avg = (l, f) => { const v = l.map(f).filter(x=>x!=null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const conf = DATA.seasons[y].conf[id] || DATA.teams[id][2], color = DATA.teams[id][3] || 'var(--muted)';
+  const key = (lbl, src, val, sub) => `<div><div class="k">${lbl} <span class="src ${src}">${{k:'MARKET',m:'MODEL',h:'HIST',d:'DERIVED'}[src]}</span></div><b>${val}</b>${sub?`<div class="s">${sub}</div>`:''}</div>`;
+  const rk = (v, r, f) => v==null ? '<span class="na">N/A</span>' : `${f(v)} <span class="r">#${r}</span>`;
+  const ratingNote = inRange ? `from ${fmtDate(state.from)} to ${fmtDate(state.to)}` : `<button class="chip" id="tvRate" type="button">Rate ${y}</button>`;
+  const head = `<div class="panel">
+    <div class="note"><span class="sw" style="background:${color}"></span>${esc(conf)} · <select id="tvSeason" aria-label="Season" style="height:28px;min-height:0;padding:2px 6px">${seasons.map(x=>`<option ${x===y?'selected':''}>${x}</option>`).join('')}</select></div>
+    <h2 class="gvh">${esc(nm(id))}</h2>
+    <div class="kgrid">
+      ${key('Rating','m', inRange ? rk(t.rating, t.ratingRk, f1) : '<span class="na">N/A</span>', ratingNote)}
+      ${key('Offense','m', inRange ? rk(t.adjO, t.adjORk, f3) : '<span class="na">N/A</span>', 'adj EPA/play')}
+      ${key('Defense','m', inRange ? rk(t.adjD, t.adjDRk, f3) : '<span class="na">N/A</span>', 'adj EPA/play allowed')}
+      ${key('SOS','d', inRange && t.sos!=null ? rk(t.sos, t.sosRk, f1) : '<span class="na">N/A</span>', 'avg opponent rating')}
+      ${key('Record','h', `${rate(done, x=>x.us-x.them).w}-${rate(done, x=>x.us-x.them).l}`, `${y} season`)}
+      ${key('ATS','h', trendCell(rate(done.filter(x=>x.cover!=null), x=>x.cover)), 'vs closing spread')}
+      ${key('O/U','h', trendCell(rate(done.filter(x=>x.ou!=null), x=>x.ou)), 'overs-unders')}
+    </div></div>`;
+  const pchips = [['L3','Last 3'],['L5','Last 5'],['L10','Last 10'],['season','Season'],['custom','Custom']]
+    .map(([k,l])=>`<button class="chip" data-tvp="${k}" aria-pressed="${TV.period===k}">${l}</button>`).join('');
+  const custom = TV.period==='custom' ? `<div class="controls" style="margin-top:8px"><div class="field"><label for="tvFrom">From</label><input type="date" id="tvFrom" value="${TV.from}"></div><div class="field"><label for="tvTo">To</label><input type="date" id="tvTo" value="${TV.to}"></div></div>` : '';
+  const summ = `<div class="chips">${pchips}</div>${custom}
+    <div class="kgrid">
+      ${key('Straight up','h', su.n?`${su.w}-${su.l}`:'<span class="na">N/A</span>', `${sel.length} game${sel.length===1?'':'s'}`)}
+      ${key('ATS','h', trendCell(at), 'closing spread')}
+      ${key('O/U','h', trendCell(ou), 'closing total')}
+      ${key('Avg margin','h', naTxt(avg(sel, x=>x.us-x.them), f1), '')}
+      ${key('Avg vs spread','d', naTxt(avg(sel, x=>x.spread==null?null:x.us-x.them+x.spread), f1), 'margin plus spread')}
+      ${key('Off EPA/play','h', naTxt(avg(sel, x=>x.offE), f3), 'raw, not adjusted')}
+      ${key('Off success','h', naTxt(avg(sel, x=>x.offSR), x=>pct(x)+'%'), 'raw')}
+    </div>`;
+  const gs = t && inRange ? new Map(t.games.map(x=>[x.date+':'+x.opp.id, x.g])) : new Map();
+  const charts = `<div class="chartrow" style="margin-top:12px">
+    <div class="panel"><b>Margin vs closing spread</b> <span class="note">by game, above zero is a cover</span>${divBars(sel.filter(x=>x.cover!=null).map(x=>({lab:ab(x.opp), val:x.us-x.them+x.spread, tip:`${fmtDate(x.date)} ${x.home&&!x.neu?'vs':x.neu?'vs':'at'} ${nm(x.opp)}: ${x.us}-${x.them}, spread ${spreadTxt(x.spread)}, ${f1(x.us-x.them+x.spread)} vs the line`})), `${nm(id)} margin vs spread by game`, 10)}</div>
+    <div class="panel"><b>G-Score</b> <span class="note">opponent adjusted performance by game, rating points</span>${inRange ? divBars(sel.filter(x=>gs.has(x.date+':'+x.opp)).map(x=>({lab:ab(x.opp), val:gs.get(x.date+':'+x.opp), tip:`${fmtDate(x.date)} vs ${nm(x.opp)}: G-Score ${f1(gs.get(x.date+':'+x.opp))}`})), `${nm(id)} G-Score by game`) : `<p class="note">Needs ${y} ratings. ${ratingNote}</p>`}</div></div>`;
+  const oppR = o => { const ot = inRange && current.byId.get(o); return ot ? `${f1(ot.rating)} <span class="r">#${ot.ratingRk}</span>` : '<span class="na">N/A</span>'; };
+  const rows = log.filter(x=>!x.done || sel.includes(x)).map(x=>{ const res = x.done ? (x.us>x.them?'W':'L') : null;
+    return `<tr class="${x.done?'':'up'}"><td class="l">${fmtDate(x.date,true)}</td><td class="l">${x.neu?'N':x.home?'H':'A'}</td><td class="l">${teamLinkHtml(x.opp)}</td>
+      <td class="l">${x.done?`<span class="${res}">${res}</span> ${x.us}-${x.them}`:`<span class="tmlink glink" data-gid="${x.gid}" tabindex="0" role="link">${x.tm||'TBA'} ›</span>`}</td>
+      <td>${x.spread==null?'<span class="na">N/A</span>':spreadTxt(x.spread)}</td>
+      <td class="${x.cover>0?'W':x.cover<0?'L':''}">${x.cover==null?'':x.cover>0?'Cover':x.cover<0?'Miss':'Push'}</td>
+      <td>${naTxt(x.tot, v=>v.toFixed(1))}</td><td>${x.ou==null?'':x.ou>0?'Over':x.ou<0?'Under':'Push'}</td>
+      <td>${x.model==null?'<span class="na">N/A</span>':spreadTxt(x.model)}</td>
+      <td>${naTxt(x.offE, f3)}</td><td>${naTxt(x.offSR, v=>pct(v)+'%')}</td><td>${naTxt(x.offEX, f3)}</td><td>${naTxt(x.defE, f3)}</td>
+      <td>${gs.has(x.date+':'+x.opp) ? f1(gs.get(x.date+':'+x.opp)) : '<span class="na">N/A</span>'}</td><td>${oppR(x.opp)}</td>
+      <td>${x.done?`<span class="tmlink glink" data-gid="${x.gid}" tabindex="0" role="link">Research ›</span>`:''}</td></tr>`; }).join('');
+  const table = `<div class="tablebox fbox" style="margin-top:12px"><table class="tlog"><thead><tr>
+    <th class="l">Date</th><th class="l" title="Home, away or neutral">Site</th><th class="l">Opponent</th><th class="l">Result</th>
+    <th title="Closing spread, this team's side (MARKET)">Spread</th><th title="Result against the closing spread (HISTORICAL)">ATS</th>
+    <th title="Closing total (MARKET)">Total</th><th>O/U</th><th title="Pregame model spread, this team's side, made with only earlier games (MODEL)">Model</th>
+    <th title="Raw offensive EPA per play that game, garbage time removed">Off EPA</th><th title="Raw offensive success rate that game">Off SR</th>
+    <th title="EPA per successful, turnover free play that game">Expl</th><th title="Raw EPA per play allowed that game">Def EPA</th>
+    <th title="Opponent adjusted performance that game, from the current ratings range">G-Score</th><th title="Opponent's current rating and rank (MODEL)">Opp rating</th><th></th>
+    </tr></thead><tbody>${rows || `<tr><td colspan="16" class="empty">No games in this period.</td></tr>`}</tbody></table></div>
+    <p class="note">Upcoming games are grayed out at the bottom. Per game stats are raw (not opponent adjusted), with garbage time and non FBS games removed, and N/A where play by play is missing. G-Score and opponent rating use the ratings range at the top of the page.</p>`;
+  $('tv').innerHTML = head + `<h3 class="sec">Performance</h3>${summ}${charts}<h3 class="sec">Game by game</h3>${table}`;
+}
+$('tv').addEventListener('click', e=>{
+  const p = e.target.closest('[data-tvp]'); if (p){ TV.period = p.dataset.tvp; renderTeam(); return; }
+  if (e.target.id==='tvRate'){ state.season = TV.season; $('season').value = TV.season; applyPreset('all'); syncControls(); refresh(); renderTeam(); }
+});
+$('tv').addEventListener('change', e=>{
+  if (e.target.id==='tvSeason'){ TV.season = e.target.value; TV.period = 'season'; renderTeam(); }
+  if (e.target.id==='tvFrom') { TV.from = e.target.value; renderTeam(); }
+  if (e.target.id==='tvTo') { TV.to = e.target.value; renderTeam(); }
+});
+$('gsearch').addEventListener('change', e=>{ const q = e.target.value.trim().toLowerCase(); if (!q) return;
+  const ids = Object.keys(DATA.teams).map(Number), hit = ids.find(i=>nm(i).toLowerCase()===q) ?? ids.find(i=>nm(i).toLowerCase().startsWith(q)) ?? ids.find(i=>nm(i).toLowerCase().includes(q));
+  if (hit!=null){ openTeam(hit); e.target.value = ''; e.target.blur(); } });
 
 // ---------- Game Finder ----------
 const FX = {sort:'date', dir:1};
@@ -1577,7 +1686,7 @@ function syncControls(){
   $('conf').innerHTML = ['All',...confs].map(c=>`<option ${c===state.conf?'selected':''}>${esc(c)}</option>`).join('');
   $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
 }
-function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); if (GV.gid && !$('p-game').hidden) renderGame(); }
+function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
 function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; } }
 // one handler for team and game links anywhere on the page
 function openGameMatchup(g, sideId){
@@ -1587,8 +1696,6 @@ function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if 
   if (GV.gid!==gid){ GV.gid = gid; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
-function openTeam(id){ showTab('ratings'); state.open = id; if (state.conf!=='All' && current.byId.get(id)?.conf!==state.conf){ state.conf='All'; $('conf').value='All'; }
-  renderTable(); const tr = document.querySelector(`#rt tr.team[data-id="${id}"]`); if (tr) tr.scrollIntoView({block:'center'}); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');
   if (kind==='game' && id) openGame(+id, false); else if (kind==='team' && id) openTeam(+id, false); else if (TABS.includes(kind) && !$('tab-'+kind).hidden) showTab(kind); else if (!kind) showTab('finder'); }
 window.addEventListener('popstate', route);
@@ -1650,7 +1757,7 @@ function sortBy(k){
   renderTable();
 }
 const tbody = document.querySelector('#rt tbody');
-function toggleRow(e){ const tr=e.target.closest('tr.team'); if(!tr) return; const id=+tr.dataset.id; state.open = state.open===id?null:id; renderTable(); }
+function toggleRow(e){ if (e.target.closest('.tlink')) return; const tr=e.target.closest('tr.team'); if(!tr) return; const id=+tr.dataset.id; state.open = state.open===id?null:id; renderTable(); }
 tbody.addEventListener('click', toggleRow);
 tbody.addEventListener('keydown', e=>{ if(e.key==='Enter') toggleRow(e); });
 document.querySelector('nav.tabs').addEventListener('click', e=>{
