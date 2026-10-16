@@ -145,6 +145,22 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 @media (prefers-reduced-motion:no-preference){tbody tr.team td{transition:background .12s}}
 /* research terminal: dense tables, sticky headers, heat cells */
 .gvh{font:800 clamp(26px,5vw,40px)/1 var(--display);text-transform:uppercase;margin:0}
+.ox{margin-top:12px}
+.ox .mk{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.ox .mk .chip{flex:0 0 auto}
+.ox .mk .chip[aria-pressed="true"] .note{color:inherit;opacity:.85}
+.ox .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:10px}
+.ox .seg button{font:600 13px var(--data);background:var(--panel);color:var(--muted);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer}
+.ox .seg button:last-child{border-right:0}
+.ox .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.ox .hr{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
+.ox .hr b{font:800 34px/1 var(--display)}
+.ox .rates{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--data);font-size:12px;margin-top:8px}
+.ox .rates span{border:1px solid var(--line);border-radius:6px;padding:3px 7px;color:var(--muted)}
+.ox .rates b{margin-left:4px}.ox .rates .hi{color:var(--good)}.ox .rates .lo{color:var(--bad)}
+.betbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
+.betbar .px{font:700 16px var(--data);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;background:var(--panel)}
+.mtx td{font-size:13px}
 .kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:12px}
 .kgrid>div{background:var(--panel);padding:10px 12px}
 .kgrid .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:center}
@@ -1038,7 +1054,7 @@ function renderGames(){
       const siteVal = neu?0:(isHome?1:-1);
       const kAttr = (ownK!=null&&oppK!=null) ? ` data-ka="${ownK}" data-kb="${oppK}"` : '';
       const vAttr = (veg===null ? '' : ` data-line="${isHome ? -veg : veg}"`) + (pred===null ? '' : ` data-pred="${isHome ? pred : -pred}"`);
-      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}"${kAttr}${vAttr} tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-gid="${gid}" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}"${kAttr}${vAttr} tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     };
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,h,as,hs,false,ka,kh)}${tline(h,a,hs,as,true,kh,ka)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
@@ -1074,8 +1090,8 @@ function tmlinkGo(el){
     el.dataset.ka ? +el.dataset.ka : null, el.dataset.kb ? +el.dataset.kb : null,
     el.dataset.line !== undefined ? +el.dataset.line : null, el.dataset.pred !== undefined ? +el.dataset.pred : null);
 }
-$('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
-$('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
+$('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return; openGame(+el.dataset.gid); });
+$('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return; openGame(+el.dataset.gid); });
 
 // ---------- trends feed ----------
 function wilsonCI(w, n){ if (!n) return [0,1]; const z=1.96, p=w/n, d=1+z*z/n, c=p+z*z/(2*n), h=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n)); return [(c-h)/d,(c+h)/d]; }
@@ -1277,7 +1293,7 @@ function feedCard(g){
     <div class="strip">${i.list.map(x=>`<i class="${x.cover>0?'w':'l'}" title="${fmtDate(x.date)}"></i>`).join('')}</div>
     <div class="note">${signalCheck(i)}</div></div>`).join('');
   const html = `<div class="fcard"><div class="fhead">
-      <span class="mt tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${rk(a)}${esc(nm(a))} ${neu?'vs':'@'} ${rk(h)}${esc(nm(h))}</span>
+      <span class="mt tmlink" data-gid="${gid}" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${rk(a)}${esc(nm(a))} ${neu?'vs':'@'} ${rk(h)}${esc(nm(h))}</span>
       <span class="note">${fmtDate(date,true)}${tm?' '+tm:''}</span></div>
     ${bets.join('') || '<p class="note">No line or market price posted yet.</p>'}${insHtml}</div>`;
   return {html, ev: best, z: ins.length ? ins[0].z : -1};
@@ -1308,7 +1324,7 @@ function insightHtml(ins, g, b){
   const sig = signalCheck(ins), pill = sig.slice(0, sig.indexOf('</span>')+7), rest = sig.slice(sig.indexOf('</span>')+7);
   return `<div class="icard">
     <div class="ih"><b><span class="dot" style="background:${color}"></span>${teamLinkHtml(ins.id)}</b>
-      <span class="note tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
+      <span class="note tmlink" data-gid="${gid}" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
     <div class="it">${esc(ins.text)}${avgTxt}.${ins.tag?`<span class="note" style="font-weight:400">${esc(ins.tag)}</span>`:''}</div>
     ${ins.rates ? `<div class="rates">${[['L5',ins.rates.L5],['L10',ins.rates.L10],['L20',ins.rates.L20],[seasonOf(date),ins.rates.season],['H2H',ins.rates.h2h]].filter(([,r])=>r&&r.n).map(([l,r])=>{
       const q=r.k/r.n; return `<span>${l}<b class="${q>=0.7?'hi':q<=0.3?'lo':''}">${r.n<5&&l!=='L5'?r.k+'/'+r.n:Math.round(q*100)+'%'}</b></span>`; }).join('')}</div>` : ''}
@@ -1351,8 +1367,8 @@ $('fmkt').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!
   document.querySelectorAll('#fmkt .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
 $('frange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fdays=+b.dataset.days;
   document.querySelectorAll('#frange .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
-$('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) tmlinkGo(el); });
-$('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) tmlinkGo(el); });
+$('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) openGame(+el.dataset.gid); });
+$('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el && !el.classList.contains('tlink')) openGame(+el.dataset.gid); });
 
 // ---------- research data layer: pure calculations, no DOM ----------
 // Source of every number: MARKET (books via CFBD, or Kalshi), MODEL (this site's pregame projection),
@@ -1436,7 +1452,7 @@ function confidence(kind, e){  // honest label: has this size of disagreement be
 }
 
 // ---------- Game Research view ----------
-let GV = {gid:null, range:'season'};
+let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
 function gvRangeSet(kind){
   const g = DATA.games.find(x=>x[0]===GV.gid); if (!g) return;
   const date = g[1], y = seasonOf(date), [lo, hi] = ALL.span[y], end = g[6]===null ? hi : addDays(date, -1);  // past games: nothing from that day on
@@ -1470,6 +1486,103 @@ function divBars(items, aria, minScale=20){  // diverging bars around zero; item
 function gscoreChart(t){  // each game's opponent adjusted performance, in rating points
   const gs = t ? t.games.slice(-10) : [];
   return divBars(gs.map(g=>({lab:g.opp.abbr, val:g.g, tip:`${fmtDate(g.date)} ${g.loc===-1?'at':'vs'} ${g.opp.name}: ${g.ms}-${g.os}, G-Score ${f1(g.g)}`})), `${t?t.name:''} G-Score by game`);
+}
+// ---------- Outlier style game view: pick a bet, see recent games against tonight's number ----------
+function lineBars(items, line, aria){  // items: {lab, val, hit: 1 cleared, -1 missed, 0 push, tip}
+  if (!items.length) return '<p class="note">No games in this range.</p>';
+  const n = items.length, slot = 30, W = Math.max(320, n*slot + 44), H = 180, pT = 14, pB = 30, L = 36;
+  const vals = items.map(i=>i.val), lo = Math.min(0, line, ...vals), hi = Math.max(0, line, ...vals), span = (hi-lo) || 1;
+  const y = v => pT + (hi - v)/span*(H-pT-pB), y0 = y(0), yl = y(line), bw = 18;
+  const bars = items.map((it,i)=>{ const x = L + i*slot + (slot-bw)/2, top = Math.min(y(it.val), y0), h = Math.max(1, Math.abs(y(it.val)-y0)), r = Math.min(4, h, bw/2), up = it.val>=0;
+    const path = up ? `M${x},${y0} V${top+r} Q${x},${top} ${x+r},${top} H${x+bw-r} Q${x+bw},${top} ${x+bw},${top+r} V${y0} Z`
+                    : `M${x},${top} V${top+h-r} Q${x},${top+h} ${x+r},${top+h} H${x+bw-r} Q${x+bw},${top+h} ${x+bw},${top+h-r} V${top} Z`;
+    return `<g><rect x="${L+i*slot}" y="0" width="${slot}" height="${H}" fill="transparent"><title>${esc(it.tip)}</title></rect>
+      <path d="${path}" fill="${it.hit>0?'var(--good)':it.hit<0?'var(--bad)':'var(--chalk)'}" pointer-events="none"/>
+      <text x="${x+bw/2}" y="${H-16}" font-size="9" text-anchor="middle" fill="var(--muted)">${esc(it.lab)}</text>
+      <text x="${x+bw/2}" y="${H-5}" font-size="8" text-anchor="middle" fill="var(--muted)">${esc(it.sub||'')}</text></g>`; }).join('');
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block" role="img" aria-label="${esc(aria)}">
+    <line x1="${L}" x2="${W}" y1="${y0}" y2="${y0}" stroke="var(--chalk)" stroke-width="1"/>
+    ${Math.abs(y0-yl)>11?`<text x="${L-6}" y="${y0+3}" font-size="9" text-anchor="end" fill="var(--muted)">0</text>`:''}${bars}
+    <line x1="${L}" x2="${W}" y1="${yl}" y2="${yl}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="${L-6}" y="${yl+3}" font-size="10" font-weight="700" text-anchor="end" fill="var(--ink)">${line.toFixed(1)}</text></svg></div>`;
+}
+function gvMarkets(v){  // every bet this game has a number for, plus the moneyline which is always gradeable
+  const m = [];
+  if (v.spread!=null){ m.push({k:'sa', team:v.a, kind:'ats', line:v.spread, label:`${ab(v.a)} ${spreadTxt(v.spread)}`, px:'−110'});
+                       m.push({k:'sh', team:v.h, kind:'ats', line:-v.spread, label:`${ab(v.h)} ${spreadTxt(-v.spread)}`, px:'−110'}); }
+  if (v.total!=null){ m.push({k:'ov', kind:'ou', over:true, line:v.total, label:`Over ${v.total}`, px:'−110'});
+                      m.push({k:'un', kind:'ou', over:false, line:v.total, label:`Under ${v.total}`, px:'−110'}); }
+  for (const [k,t] of [['ma',v.a],['mh',v.h]]){ const home = t===v.h, px = v.mktSrc==='book' ? amTxt(home?v.mlH:v.mlA) : v.mktSrc==='kalshi' ? `${home?v.kh:v.ka}¢` : 'N/A';
+    m.push({k, team:t, kind:'ml', line:0, label:`${ab(t)} to win`, px}); }
+  return m;
+}
+function gvSample(v, mk, team, range){  // finished games before this one, from `team`'s side, graded against tonight's number
+  const opp = team===v.h ? v.a : v.h, y = seasonOf(v.date), yi = SEASONS.indexOf(y);
+  let gs = teamGames(team).filter(g=>g[1]<v.date).sort((a,b)=>a[1]<b[1]?-1:1);
+  if (range[0]==='L') gs = gs.slice(-(+range.slice(1)));
+  else if (range==='season') gs = gs.filter(g=>seasonOf(g[1])===y);
+  else if (range==='prev') gs = gs.filter(g=>seasonOf(g[1])===SEASONS[yi-1]);
+  else if (range==='h2h') gs = gs.filter(g=>g[3]===opp||g[4]===opp).slice(-10);
+  return gs.map(g=>{ const home = g[3]===team, m = home?g[6]-g[7]:g[7]-g[6], pts = g[6]+g[7], o = home?g[4]:g[3];
+    let val, hit;
+    if (mk.kind==='ou'){ val = pts; hit = Math.sign(pts-mk.line)*(mk.over?1:-1); }
+    else { val = m; hit = Math.sign(m + mk.line); }   // ats: margin plus tonight's spread; ml: line is 0
+    return {g, lab: ab(o), sub: g[1].slice(5).replace('-','/'), val, hit,
+      tip: `${fmtDate(g[1])} ${home&&!g[5]?'vs':g[5]?'vs':'at'} ${nm(o)}: ${home?g[6]:g[7]}-${home?g[7]:g[6]}${mk.kind==='ou'?`, ${pts} total points`:`, margin ${f1(m)}`}${g[9]!=null?`, that game's line ${spreadTxt(home?-g[9]:g[9])}`:''}`}; });
+}
+function gvOutlier(v){
+  const mks = gvMarkets(v);
+  let mk = mks.find(x=>x.k===GV.mk);
+  if (!mk){ const lean = v.spreadEdge==null ? null : (v.spreadEdge>0 ? 'sh' : 'sa'); mk = mks.find(x=>x.k===lean) || mks.find(x=>x.kind==='ats') || mks[0]; GV.mk = mk.k; }
+  const team = mk.kind==='ou' ? (GV.tt===v.a ? v.a : v.h) : mk.team, opp = team===v.h ? v.a : v.h;
+  const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],['season',seasonOf(v.date)],['prev',SEASONS[SEASONS.indexOf(seasonOf(v.date))-1]||'Prev'],['h2h','H2H']];
+  const smp = gvSample(v, mk, team, GV.rg), dec = smp.filter(x=>x.hit!==0), k = dec.filter(x=>x.hit>0).length;
+  const avg = smp.length ? smp.reduce((t,x)=>t+x.val,0)/smp.length : null;
+  const rateOf = r => { const s = gvSample(v, mk, team, r).filter(x=>x.hit!==0), w = s.filter(x=>x.hit>0).length; return s.length ? {w, n:s.length} : null; };
+  const rates = ranges.map(([r,l])=>{ const x = rateOf(r); if (!x) return ''; const q = x.w/x.n;
+    return `<span>${esc(l)}<b class="${x.n>=5&&q>=0.7?'hi':x.n>=5&&q<=0.3?'lo':''}">${x.n<5?x.w+'/'+x.n:Math.round(q*100)+'%'}</b></span>`; }).join('');
+  const what = mk.kind==='ou' ? `${nm(team)}'s games went ${mk.over?'over':'under'} ${mk.line}` : mk.kind==='ml' ? `${nm(team)} won` : `${nm(team)} covered ${spreadTxt(mk.line)}`;
+  // matchup context: each side of the ball, from the current ratings
+  const t = current && current.byId.get(team), o = current && current.byId.get(opp);
+  const cell = (x, key, f) => x && x[key]!=null ? `${f(x[key])} <span class="r">#${x[key+'Rk']}</span>` : '<span class="na">N/A</span>';
+  const side = (off, def) => [['EPA/play','adjO','adjD',f3],['Success rate','srO','srD',x=>pct(x)+'%'],['Rushing EPA','reO','reD',f3],['Passing EPA','peO','peD',f3],['Explosiveness','exO','exD',f3],['Havoc','hvO','hvD',x=>pct(x)+'%'],['Finishing drives','fdO','fdD',x=>x.toFixed(2)],['Points','ptsO','ptsD',x=>x.toFixed(1)]]
+    .map(([l,ko,kd,f])=>`<tr><td class="l">${l}</td><td>${cell(off,ko,f)}</td><td>${cell(def,kd,f)}</td></tr>`).join('');
+  const mtx = t && o ? `<div class="chartrow" style="margin-top:12px">
+      <div class="tablebox"><table class="cmp mtx"><thead><tr><th class="l">${esc(ab(team))} has the ball</th><th>${esc(ab(team))} offense</th><th>${esc(ab(opp))} defense</th></tr></thead><tbody>${side(t,o)}</tbody></table></div>
+      <div class="tablebox"><table class="cmp mtx"><thead><tr><th class="l">${esc(ab(opp))} has the ball</th><th>${esc(ab(opp))} offense</th><th>${esc(ab(team))} defense</th></tr></thead><tbody>${side(o,t)}</tbody></table></div></div>
+      <p class="note">Opponent adjusted, national ranks out of ${current.teams.length} (rank 1 is best on both sides of the ball). Pace: ${esc(ab(team))} ${t.pace.toFixed(1)}, ${esc(ab(opp))} ${o.pace.toFixed(1)} non garbage plays a game.</p>` : '';
+  // line movement: opening vs now, and Kalshi's price over time
+  const op = (DATA.lineopen||{})[v.gid], km = (DATA.kmove||{})[v.gid];
+  const move = mk.kind==='ats' && op!=null ? `<div>Spread opened <b>${esc(ab(team))} ${spreadTxt(team===v.h?-op:op)}</b>, now <b>${spreadTxt(mk.line)}</b>${op!==v.spread?` (moved ${Math.abs(op-v.spread).toFixed(1)} toward ${esc(ab((v.spread-op)>0?v.h:v.a))})`:', no move'}.</div>` : '';
+  const kmv = km && km.length>1 ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Kalshi ${esc(ab(v.h))} to win: ${km[0][1]}¢ → <b>${km[km.length-1][1]}¢</b> ${sparkline(km, false)}<span class="note">${km.length} snapshots</span></div>` : '';
+  // the bet, with the model's view of it and the honest check
+  let model = '', conf = null;
+  if (mk.kind==='ats' && v.pred!=null){ const mm = team===v.h ? -v.pred : v.pred, e = (team===v.h?1:-1)*v.spreadEdge; conf = confidence('spread', v.spreadEdge);
+    model = `Model ${esc(ab(team))} ${spreadTxt(mm)}: ${e>=0?`likes ${esc(ab(team))} by ${e.toFixed(1)} more than the market`:`likes ${esc(ab(opp))} by ${(-e).toFixed(1)} more`}`; }
+  if (mk.kind==='ou' && v.ptot!=null){ const e = v.totalEdge*(mk.over?1:-1); conf = confidence('total', v.totalEdge);
+    model = `Model total ${v.ptot.toFixed(1)}: ${e>=0?`leans ${mk.over?'over':'under'} by ${e.toFixed(1)}`:`leans the other way by ${(-e).toFixed(1)}`}`; }
+  if (mk.kind==='ml' && v.pModelH!=null){ const pm = team===v.h ? v.pModelH : 1-v.pModelH, pk = v.pMktH==null ? null : (team===v.h ? v.pMktH : 1-v.pMktH);
+    model = `Model win ${(pm*100).toFixed(1)}%${pk==null?'':`, market ${(pk*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`}`; }
+  const ttog = mk.kind==='ou' ? `<div class="seg" role="group" aria-label="Whose games">${[v.a,v.h].map(id=>`<button data-gvt="${id}" aria-pressed="${id===team}">${esc(ab(id))} games</button>`).join('')}</div> ` : '';
+  return `<div class="panel ox">
+    <div class="mk" role="group" aria-label="Bet">${mks.map(x=>`<button class="chip" data-gvm="${x.k}" aria-pressed="${x.k===mk.k}">${esc(x.label)} <span class="note">${esc(x.px)}</span></button>`).join('')}</div>
+    ${ttog}<div class="seg" role="group" aria-label="Games">${ranges.map(([r,l])=>`<button data-gvg="${r}" aria-pressed="${GV.rg===r}">${esc(l)}</button>`).join('')}</div>
+    <div class="hr"><b>${dec.length?`${k}/${dec.length}`:'N/A'}</b><span>${dec.length?`${Math.round(100*k/dec.length)}% · ${esc(what)}${smp.length-dec.length?` (${smp.length-dec.length} push)`:''}`:'no games in this range'}</span>
+      ${avg==null?'':`<span class="note">avg ${mk.kind==='ou'?'total':'margin'} ${mk.kind==='ou'?avg.toFixed(1):f1(avg)}</span>`}</div>
+    ${lineBars(smp, mk.kind==='ou' ? mk.line : -mk.line, `${what}, by game`)}
+    <div class="rates">${rates}</div>
+    <p class="note">Dashed line is tonight's number${mk.kind==='ats'?` (${esc(ab(team))} ${mk.line<0?`needs to win by more than ${(-mk.line).toFixed(1)}`:mk.line>0?`covers by winning or losing by less than ${mk.line.toFixed(1)}`:'needs to win'})`:''}. Green cleared it, red didn't, gray pushed. Past games are graded against tonight's line, not their own.</p>
+    ${move||kmv ? `<div class="note" style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${move}${kmv}</div>` : ''}
+    <div class="betbar"><div><b>${esc(mk.label)}</b>${model?`<div class="note">${model}</div>`:''}</div>
+      <div style="display:flex;gap:8px;align-items:center">${conf?`<span class="cell ${conf.cls}" title="${esc(conf.txt)}">${conf.lbl}</span>`:''}<span class="px">${esc(mk.px)}</span></div></div>
+    <details style="margin-top:8px"><summary class="note" style="cursor:pointer"><span class="verdict noise">Signal check</span> <u>does a hit rate like this mean anything?</u></summary>
+      <p class="note">${mk.kind==='ml' ? 'Win streaks are already in the moneyline price, so the hit rate above mostly tells you the team is good, which the market knows.' : (()=>{ const B = HR10[mk.kind==='ou'?'ou':'ats'], s10 = gvSample(v, mk, team, 'L10').filter(x=>x.hit!==0); if (s10.length<10) return 'Needs 10 recent games to compare against history.';
+        const kk = s10.filter(x=>x.hit>0).length, over = mk.kind!=='ou' || mk.over, s = {c:0,n:0};
+        for (let i=0;i<=10;i++) if (over ? i>=kk : i<=10-kk){ s.c += over ? B[i].c : B[i].n-B[i].c; s.n += B[i].n; }
+        return `Since ${mk.kind==='ou'?2013:2004}, when a team had cleared that game's number in ${kk}+ of its previous 10, it cleared it next time <b>${s.n?(100*s.c/s.n).toFixed(1):'n/a'}%</b> of ${s.n.toLocaleString()} games. Break even at −110 is 52.4%. Books move the line to account for recent form, so a strong L10 alone has not been a reason to bet.`; })()}</p>
+      <p class="note">${conf?esc(conf.txt):''}</p></details>
+    ${mtx}
+  </div>`;
 }
 function renderGame(){
   const box = $('gv'), g = DATA.games.find(x=>x[0]===GV.gid);
@@ -1545,9 +1658,12 @@ function renderGame(){
     <p class="note">Season and home, away, favorite and underdog splits use ${seasonOf(v.date)} games with a closing line, before ${fmtDate(v.date)}. Records are wins-losses-pushes; colored only with 5+ games. Tap any record to see every game in it.</p>
     <div id="gvAudit"></div>`;
 
-  box.innerHTML = header + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
+  box.innerHTML = header + gvOutlier(v) + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
 }
 $('gv').addEventListener('click', e=>{
+  const m = e.target.closest('[data-gvm]'); if (m){ GV.mk = m.dataset.gvm; renderGame(); return; }
+  const q = e.target.closest('[data-gvg]'); if (q){ GV.rg = q.dataset.gvg; renderGame(); return; }
+  const tt = e.target.closest('[data-gvt]'); if (tt){ GV.tt = +tt.dataset.gvt; renderGame(); return; }
   const r = e.target.closest('[data-gvr]'); if (r){ if (r.dataset.gvr==='custom'){ GV.range='custom'; window.scrollTo({top:0}); $('from').focus(); renderGame(); } else gvRangeSet(r.dataset.gvr); return; }
   const au = e.target.closest('[data-aud]'); if (au){ const [id,k,kind] = au.dataset.aud.split('|'), g = DATA.games.find(x=>x[0]===GV.gid), pr = teamProfile(+id, g[1]);
     $('gvAudit').innerHTML = `<div class="panel" style="margin-top:10px"><b>${esc(nm(+id))}: ${au.closest('tr').firstElementChild.textContent}</b>${auditTable(pr.lists[k], kind)}</div>`; $('gvAudit').scrollIntoView({block:'nearest'}); return; }
@@ -1943,7 +2059,7 @@ function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
   goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
 function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
-  if (GV.gid!==gid){ GV.gid = gid; gvRangeSet('season'); } else renderGame();
+  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');
