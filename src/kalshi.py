@@ -110,6 +110,22 @@ def main():
         with open(HISTORY_PATH, 'a') as f:
             f.write('\n'.join(snapshot_lines) + '\n')
 
+    # price history for games still upcoming, for the Trends tab's line movement sparkline
+    up_ids = {g[0] for g in site['games'] if g[6] is None}
+    moves = defaultdict(list)
+    try:
+        with open(HISTORY_PATH) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("gid") in up_ids and r.get("home_pct") is not None:
+                    moves[r["gid"]].append([r["ts"], r["home_pct"]])
+    except FileNotFoundError:
+        pass
+    site['kmove'] = {str(k): v[-40:] for k, v in moves.items()}
+
     # pad every other game row to the same length (14: original 11 + 2 kalshi fields)
     for g in site['games']:
         while len(g) < 13:

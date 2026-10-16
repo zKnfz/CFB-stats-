@@ -40,7 +40,7 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     upcoming = {g[0]: g for g in site['games'] if g[6] is None}
 
-    spreads, samples = {}, []
+    spreads, opens, samples = {}, {}, []
     for st in ("regular", "postseason"):
         try:
             rows = cfbd_get("/lines", year=SEASON, seasonType=st)
@@ -53,15 +53,20 @@ def main():
                 continue
             gid = int(row["id"])
             spreads[gid] = -float(l["spread"])  # CFBD spread is the home side's number, so home margin is its negative
+            if l.get("spreadOpen") not in (None, ""):
+                opens[gid] = -float(l["spreadOpen"])
             if gid in upcoming and len(samples) < 3:
                 samples.append((row.get("homeTeam"), row.get("awayTeam"), l.get("provider"), l.get("spread"), l.get("formattedSpread")))
 
     filled = 0
+    site['lineopen'] = {}
     for gid, g in upcoming.items():
         if gid in spreads:
             g[9] = spreads[gid]
             filled += 1
-    print(f"{len(spreads)} games with lines from CFBD, filled {filled} of {len(upcoming)} upcoming games")
+        if gid in opens:
+            site['lineopen'][str(gid)] = opens[gid]
+    print(f"{len(spreads)} games with lines from CFBD, filled {filled} of {len(upcoming)} upcoming games, {len(site['lineopen'])} with an opening line")
     print("samples (home, away, provider, spread, formatted):", samples)
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 

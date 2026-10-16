@@ -37,7 +37,22 @@ input[type=number]{width:90px}
 .toggle{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;min-height:34px}
 .toggle input{accent-color:var(--accent);width:16px;height:16px}
 button:focus-visible,select:focus-visible,input:focus-visible,th:focus-visible,tr:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
+nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+nav.tabs button{flex:0 0 auto;white-space:nowrap}
+.fcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px}
+.fhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.fhead .mt{font-weight:700;cursor:pointer}
+.fbet{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-top:1px solid var(--line);margin-top:10px}
+.fbet .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.fstats{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--data);font-size:13px;grid-column:1/-1}
+.fstats span b{display:block;font-size:15px}
+.fins{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+.strip{display:flex;gap:3px;margin:6px 0}
+.strip i{flex:1;height:6px;border-radius:2px;background:var(--line)}
+.strip i.w{background:var(--good)}.strip i.l{background:var(--bad)}
+.verdict{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:4px}
+.verdict.noise{background:var(--line);color:var(--muted)}.verdict.real{background:var(--good-bg);color:var(--good)}
+
 nav.tabs button{font:700 17px var(--display);text-transform:uppercase;letter-spacing:.04em;background:none;border:0;color:var(--muted);padding:6px 14px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px}
 nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
 .note{font-size:13px;color:var(--muted)}
@@ -135,6 +150,7 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-ratings" aria-selected="true">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
+    <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
     <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
     <button role="tab" id="tab-backtest" aria-selected="false">Backtest</button>
     <button role="tab" id="tab-about" aria-selected="false">Method</button>
@@ -180,6 +196,23 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
       <div class="glist" id="glist"></div>
       <p class="note" id="gnote"></p>
     </div>
+  </section>
+
+  <section id="p-feed" hidden>
+    <div class="panel">
+      <div class="chips" id="fsort" role="group" aria-label="Sort trends">
+        <button class="chip" data-sort="ev" aria-pressed="true">Best value</button>
+        <button class="chip" data-sort="trend" aria-pressed="false">Strongest trend</button>
+        <button class="chip" data-sort="time" aria-pressed="false">Kickoff</button>
+      </div>
+      <div class="chips" id="frange" role="group" aria-label="Date range" style="margin-top:8px">
+        <button class="chip" data-days="7" aria-pressed="true">Next 7 days</button>
+        <button class="chip" data-days="400" aria-pressed="false">All upcoming</button>
+      </div>
+      <p class="note" id="fsum"></p>
+    </div>
+    <div id="feed"></div>
+    <p class="note" id="fnote"></p>
   </section>
 
   <section id="p-matchup" hidden>
@@ -255,6 +288,7 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
+const TABS = ['ratings','games','feed','matchup','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -784,7 +818,7 @@ function goToMatchup(a, opp, siteVal, date, kA, kB, lineA, predA){
   $('mktA').value = kA ?? ''; $('mktB').value = kB ?? '';
   $('lineA').value = lineA ?? ''; muDate = date; muPred = predA ?? null;
   renderMatchup(); save();
-  for (const t of ['ratings','games','matchup','backtest','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+  for (const t of TABS){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 }
 function tmlinkGo(el){
   goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date,
@@ -793,6 +827,123 @@ function tmlinkGo(el){
 }
 $('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
 $('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
+
+// ---------- trends feed ----------
+function wilsonCI(w, n){ if (!n) return [0,1]; const z=1.96, p=w/n, d=1+z*z/n, c=p+z*z/(2*n), h=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n)); return [(c-h)/d,(c+h)/d]; }
+// how much of the model's disagreement with the closing line to keep, fit on 2008 to 2024 only
+const FIT = (()=>{ let num=0, den=0; const rows=[];
+  for (const g of DATA.games){ if (g[6]===null||g[8]===null||g[9]===null) continue; const y=+seasonOf(g[1]); if (y<2008||y>2024) continue;
+    const d=g[8]-g[9], r=(g[6]-g[7])-g[9]; num+=r*d; den+=d*d; rows.push([d,r]); }
+  const w = den ? Math.max(0, Math.min(1, num/den)) : 0; let ss=0; for (const [d,r] of rows) ss+=(r-w*d)**2;
+  return {w, sd: Math.sqrt(ss/Math.max(1,rows.length))}; })();
+const EDGEBT = (()=>{ const st=[[0,0.5],[0.5,1],[1,2],[2,Infinity]].map(b=>({b,all:{w:0,n:0},test:{w:0,n:0}}));
+  for (const g of DATA.games){ if (g[6]===null||g[8]===null||g[9]===null) continue;
+    const e=FIT.w*(g[8]-g[9]), r=(g[6]-g[7])-g[9]; if (!r||!e) continue;
+    const s=st.find(x=>Math.abs(e)>=x.b[0]&&Math.abs(e)<x.b[1]), win=Math.sign(r)===Math.sign(e);
+    s.all.n++; if (win) s.all.w++; if (+seasonOf(g[1])>=2025){ s.test.n++; if (win) s.test.w++; } }
+  return st; })();
+// does "covered k of the last 10" predict the next game? every team, every game since 2004
+const L10 = (()=>{ const hist=new Map(), out=Array.from({length:11},()=>({c:0,n:0}));
+  const gs=DATA.games.filter(g=>g[6]!==null&&g[9]!==null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:0);
+  for (const g of gs){ const r=(g[6]-g[7])-g[9]; if (!r) continue;
+    for (const [id,cov] of [[g[3],r>0],[g[4],r<0]]){ const h=hist.get(id)||[];
+      if (h.length>=10){ const k=h.filter(Boolean).length; out[k].n++; if (cov) out[k].c++; }
+      h.push(cov); if (h.length>10) h.shift(); hist.set(id,h); } }
+  return out; })();
+const ev110 = p => p*(100/110) - (1-p);
+function impliedMargin(p){ let lo=-60, hi=60; for (let i=0;i<50;i++){ const m=(lo+hi)/2; normCdf(m/FIT.sd)<p ? lo=m : hi=m; } return (lo+hi)/2; }
+const kelly110 = p => Math.max(0, (p*(100/110) - (1-p)) / (100/110));
+const sgnPct = v => (v>=0?'+':'−')+Math.abs(v*100).toFixed(1)+'%';
+let fsort = 'ev', fdays = 7;
+
+function insightsFor(id, opp, g){  // candidate trends for one side, strongest first
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, isHome = id===h;
+  const log = teamLog(id, date).filter(x=>x.cover!==0), y=seasonOf(date), yi=SEASONS.indexOf(y);
+  const since2 = ALL.span[SEASONS[Math.max(0,yi-1)]][0], sinceY = ALL.span[y][0], name = nm(id);
+  const role = veg===null||veg===0 ? null : ((isHome ? veg : -veg) > 0 ? 'fav' : 'dog');
+  const out = [];
+  const add = (list, text, kind) => { const n=list.length; if (!n) return; const w=list.filter(x=>x.cover>0).length;
+    const avg = list.reduce((t,x)=>t+x.margin-x.exp,0)/n;
+    out.push({id, text, kind, w, n, avg, list, z: Math.abs(w-n/2)/Math.sqrt(n/4)}); };
+  const l10 = log.slice(-10);
+  if (l10.length===10){ const k=l10.filter(x=>x.cover>0).length;
+    if (k>=7) add(l10, `${name} has covered in ${k} of its last 10 games`, 'l10');
+    else if (k<=3) add(l10, `${name} has failed to cover in ${10-k} of its last 10 games`, 'l10'); }
+  const extreme = (list, min) => list.length>=min && Math.abs(list.filter(x=>x.cover>0).length/list.length-0.5)>=0.2;
+  const season = log.filter(x=>x.date>=sinceY);
+  if (extreme(season,4)) { const w=season.filter(x=>x.cover>0).length; add(season, `${name} is ${w}-${season.length-w} against the spread this season`, 'season'); }
+  if (role){ const rl = log.filter(x=>x.date>=since2 && (role==='fav' ? x.exp>0 : x.exp<0));
+    if (extreme(rl,5)) { const w=rl.filter(x=>x.cover>0).length; add(rl, `${name} is ${w}-${rl.length-w} against the spread as ${role==='fav'?'a favorite':'an underdog'} over the last two seasons`, 'role'); } }
+  const st = log.filter(x=>x.date>=since2 && (neu ? x.neu : (isHome ? x.home&&!x.neu : !x.home&&!x.neu)));
+  if (extreme(st,5)) { const w=st.filter(x=>x.cover>0).length; add(st, `${name} is ${w}-${st.length-w} against the spread ${neu?'at neutral sites':isHome?'at home':'on the road'} over the last two seasons`, 'site'); }
+  const hh = log.filter(x=>x.opp===opp).slice(-6);
+  if (extreme(hh,3)) { const w=hh.filter(x=>x.cover>0).length; add(hh, `${name} has covered in ${w} of the last ${hh.length} meetings with ${nm(opp)}`, 'h2h'); }
+  return out;
+}
+function signalCheck(ins){
+  if (ins.kind==='l10'){ const k=ins.w, hot=k>=7, s={c:0,n:0};
+    for (let i=0;i<=10;i++) if (hot ? i>=k : i<=k){ s.c+=L10[i].c; s.n+=L10[i].n; }
+    const p = s.n ? s.c/s.n : 0, [lo,hi] = wilsonCI(s.c, s.n), real = lo>0.524 || hi<0.476;
+    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':'Likely noise'}</span>Since 2004, teams that ${hot?`covered ${k}+`:`covered ${k} or fewer`} of their last 10 covered <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games). ${real?'':'That is coin flip territory, so the streak itself has not predicted anything.'}`; }
+  const [lo,hi] = wilsonCI(ins.w, ins.n), luck = lo<=0.5 && hi>=0.5;
+  return `<span class="verdict noise">${luck?'Could be luck':'Unusual, untested'}</span>95% range ${(lo*100).toFixed(0)}% to ${(hi*100).toFixed(0)}% on ${ins.n} games. ${luck?'A coin flipped this many times lands this lopsided often enough that this proves nothing.':'Lopsided, but it was picked out of many possible splits, which makes streaks like this easy to find by chance.'}`;
+}
+function sparkline(pts, flip){
+  if (!pts || pts.length<2) return '';
+  const v = pts.map(p=>flip?100-p[1]:p[1]), lo=Math.min(...v), hi=Math.max(...v), rng=Math.max(hi-lo,1), W=120, H=26;
+  const xy = v.map((x,i)=>`${(i/(v.length-1)*W).toFixed(1)},${(H-2-(x-lo)/rng*(H-4)).toFixed(1)}`).join(' ');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Kalshi price from ${v[0].toFixed(0)} to ${v[v.length-1].toFixed(0)} cents" role="img" style="display:block;margin-top:4px;color:var(--muted)"><polyline points="${xy}" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
+}
+function feedCard(g){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g;
+  const rk = id => current && current.byId.get(id) ? `<span class="rk2">${current.byId.get(id).ratingRk}</span> ` : '';
+  const bets = []; let best = null;
+  if (veg!==null && pred!==null){
+    const e = FIT.w*(pred-veg), pH = normCdf(e/FIT.sd), homeSide = pH>=0.5, p = homeSide?pH:1-pH, side = homeSide?h:a;
+    const spr = homeSide ? -veg : veg, ev = ev110(p), k = kelly110(p)/4;
+    const bk = EDGEBT.find(x=>Math.abs(e)>=x.b[0]&&Math.abs(e)<x.b[1]);
+    const op = DATA.lineopen && DATA.lineopen[gid];
+    const move = op!==undefined && op!==veg ? `<span class="note">opened ${spreadTxt(homeSide?-op:op)}</span>` : '';
+    best = ev;
+    bets.push(`<div class="fbet"><div><div class="k">Spread</div><b>${esc(ab(side))} ${spreadTxt(spr)}</b> ${move}</div><div class="note" style="text-align:right">−110</div>
+      <div class="fstats"><span>Fair cover<b>${(p*100).toFixed(1)}%</b></span><span>EV<b style="color:${ev>=0?'var(--good)':'var(--bad)'}">${sgnPct(ev)}</b></span><span>¼ Kelly<b>${k>0?(k*100).toFixed(1)+'%':'none'}</b></span></div>
+      <div class="note" style="grid-column:1/-1">Model alone: ${esc(ab(pred>=0?h:a))} by ${Math.abs(pred).toFixed(1)}. At this size of edge the side covered ${bk.test.n?(100*bk.test.w/bk.test.n).toFixed(1)+'%':'n/a'} of ${bk.test.n} games in the 2025+ test years.</div></div>`);
+  }
+  if (kh!=null && ka!=null && pred!==null){
+    const base = veg!==null ? veg : impliedMargin(kh/(kh+ka));  // market's margin, from the spread or else the Kalshi price
+    const bm = base + FIT.w*(pred-base), pH = normCdf(bm/FIT.sd);
+    const evH = pH/(kh/100)-1, evA = (1-pH)/(ka/100)-1, homeSide = evH>=evA;
+    const p = homeSide?pH:1-pH, c = (homeSide?kh:ka)/100, ev = homeSide?evH:evA, k = Math.max(0,(p-c)/(1-c))/4;
+    best = best===null ? ev : Math.max(best, ev);
+    bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><b>${esc(ab(homeSide?h:a))} ${(c*100).toFixed(0)}¢</b> ${sparkline(DATA.kmove&&DATA.kmove[gid], !homeSide)}</div><div class="note" style="text-align:right">pays $1</div>
+      <div class="fstats"><span>Fair win<b>${(p*100).toFixed(1)}%</b></span><span>EV<b style="color:${ev>=0?'var(--good)':'var(--bad)'}">${sgnPct(ev)}</b></span><span>¼ Kelly<b>${k>0?(k*100).toFixed(1)+'%':'none'}</b></span></div></div>`);
+  }
+  const ins = [...insightsFor(h,a,g), ...insightsFor(a,h,g)].sort((x,y)=>y.z-x.z).slice(0,2);
+  const insHtml = ins.map(i=>`<div class="fins"><div>${esc(i.text)}, ${i.avg>=0?'beating':'missing'} the line by ${Math.abs(i.avg).toFixed(1)} on average.</div>
+    <div class="strip">${i.list.map(x=>`<i class="${x.cover>0?'w':'l'}" title="${fmtDate(x.date)}"></i>`).join('')}</div>
+    <div class="note">${signalCheck(i)}</div></div>`).join('');
+  const html = `<div class="fcard"><div class="fhead">
+      <span class="mt tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${rk(a)}${esc(nm(a))} ${neu?'vs':'@'} ${rk(h)}${esc(nm(h))}</span>
+      <span class="note">${fmtDate(date,true)}${tm?' '+tm:''}</span></div>
+    ${bets.join('') || '<p class="note">No line or market price posted yet.</p>'}${insHtml}</div>`;
+  return {html, ev: best, z: ins.length ? ins[0].z : -1};
+}
+function renderFeed(){
+  const today = todayET(), end = addDays(today, fdays);
+  let cards = DATA.games.filter(g=>g[6]===null && g[8]!==null && g[1]>=today && g[1]<=end).map(feedCard);
+  if (fsort==='ev') cards.sort((x,y)=>(y.ev??-9)-(x.ev??-9));
+  if (fsort==='trend') cards.sort((x,y)=>y.z-x.z);
+  const pos = cards.filter(c=>c.ev!==null && c.ev>0).length;
+  $('fsum').innerHTML = `${cards.length} upcoming game${cards.length===1?'':'s'}, ${pos} with a positive EV side. Fair odds keep ${(FIT.w*100).toFixed(0)}% of the model's disagreement with the market line, the share that predicted results best on 2008 to 2024, so they sit close to the market on purpose.`;
+  $('feed').innerHTML = cards.map(c=>c.html).join('') || '<div class="empty">No upcoming games in this range.</div>';
+  $('fnote').innerHTML = `Honest caveat: in the 2025+ test years, no size of model disagreement with the closing line has covered more than the 52.4% you need at −110. Positive EV here is a lean, not a proven edge. Kalshi EV is before fees. Trends only use games before kickoff; tap a matchup for the full line history.`;
+}
+$('fsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fsort=b.dataset.sort;
+  document.querySelectorAll('#fsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
+$('frange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fdays=+b.dataset.days;
+  document.querySelectorAll('#frange .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
+$('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
+$('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
 
 // ---------- controls ----------
 function seasonBounds(){
@@ -878,13 +1029,13 @@ tbody.addEventListener('click', toggleRow);
 tbody.addEventListener('keydown', e=>{ if(e.key==='Enter') toggleRow(e); });
 document.querySelector('nav.tabs').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
-  for (const t of ['ratings','games','matchup','backtest','about']){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+  for (const t of TABS){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 });
 
 (function init(){
   try{ const s=JSON.parse(localStorage.getItem('gtr')||'{}'); if(s.season&&(s.season==='all'||s.season==='last3'||DATA.seasons[s.season])) state.season=s.season; if(typeof s.prior==='boolean') state.prior=s.prior; if(s.conf) state.conf=s.conf; }catch(e){}
   $('season').innerHTML = [...SEASONS].reverse().map(y=>`<option value="${y}">${y}</option>`).join('') + `<option value="last3">Last 3 seasons</option><option value="all">All seasons (${SEASONS[0]} to ${SEASONS[SEASONS.length-1]})</option>`;
   $('season').value=state.season; $('prior').checked=state.prior;
-  applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames(); renderBacktest();
+  applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames(); renderFeed(); renderBacktest();
 })();
 </script>

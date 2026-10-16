@@ -60,6 +60,8 @@ Raw EPA (`E`) is still solved for display columns, but it's not in the rating.
 
 Out of sample (2025 and 2026 so far): average miss 12.40 points, picks 73.3% of winners. Vegas: 11.74 and 75.7%. The earlier EPA-only version missed by 12.70.
 
+Against closing lines the market is hard to beat: on the 2025+ test years the closing spread alone misses by 11.74, and blending in any share of the model makes it slightly worse (10% model: 11.75, 30%: 11.82). Model vs line disagreements of 3+ points covered 60.5% in training years but 49.5% in test years. So no edge vs closing lines is proven; beating opening lines (CFBD has `spreadOpen` historically) is the untested next question.
+
 Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA, adding explosiveness (EPA per successful, turnover-free play) as a fourth rating input. Explosiveness still shows as a display column (`EX` in `FEATS`), its signal is just already inside EPA per play, so it moved test MAE by under 0.01 points.
 
 Checked whether the model's miss size varies by anything, to see if win probability should use a variable standard deviation instead of one flat number. Bucketing by projected margin size: no, std stays flat whether the favorite is up by 2 or up by 35. Bucketing by how many games each team has played so far that season: yes, games where neither team has played yet (pure preseason prior, no in season data) used to miss by more and run biased, about 3 points too generous to the favorite on average. `sd_early` in `site_data.json` params captures the std difference.
@@ -73,6 +75,8 @@ That preseason bias is mostly fixed now: added each team's CFBD recruiting talen
 The Games tab uses precomputed pregame picks from `site_data.json`. Each past pick only used games from before that week.
 
 The Matchup tab has an Outlier style Line history panel, all computed in the browser from games with a closing line: how favorites of that size at that site have done since 2004, each team's record against the spread (season, last 10, as favorite, as underdog, at this site), head to head with lines, and how the model's side covered when it disagreed with the line by a similar amount (all years and 2025+ test years). It only uses games before the opened game's date, and for past games it uses that game's pregame pick, not hindsight ratings. Opening a game from the Games tab fills in the spread; it can also be typed in.
+
+The Trends tab is a reverse engineered, more honest take on Outlier's feed. One card per upcoming game: the spread and the Kalshi moneyline, each with a fair probability, EV and quarter Kelly; opening line vs now; a Kalshi price sparkline (`kmove`, built by `kalshi.py` from `kalshi_history.jsonl`); and the two strongest auto generated trends (last 10 against the spread, season, as favorite or underdog, at this site, head to head) with a green/red hit strip. Unlike Outlier, every trend gets a signal check: "covered k of last 10" is backtested across every team and game since 2004 (it has not predicted the next game), and other splits show a Wilson 95% range plus a warning that they were picked from many possible splits. Fair probabilities do not use the raw model. They keep only `FIT.w` of the model's disagreement with the market (least squares on 2008 to 2024, about 0.37) with residual sd about 15.9, all computed in the browser.
 
 ## Known gaps and next ideas
 
