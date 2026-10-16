@@ -23,6 +23,7 @@ Pipeline, in order (all scripts live in `src/`, run from `src/`):
 | Early years | `pregame.py` | `pregame.pkl`: adds 2004 to 2007 |
 | Fit + export | `export2.py` | `site_data.json`: model weights, backtest stats, per-game rows, priors |
 | Games | `export3.py` | adds pregame picks for every past game and upcoming 2026 games |
+| Spreads | `lines.py` | fills sportsbook spreads into upcoming games from CFBD `/lines` (finished games already have closing lines), needs `CFBD_API_KEY` |
 | Market odds | `kalshi.py` | adds live Kalshi odds to upcoming games, logs a snapshot to `kalshi_history.jsonl` |
 | Preseason signal | `preseason.py` | `preseason.json`: CFBD talent composite + returning production, needs `CFBD_API_KEY` env var, skips gracefully without it |
 | Page | `build_page.py` | injects `site_data.json` into `src/template.html` |
@@ -70,6 +71,8 @@ That preseason bias is mostly fixed now: added each team's CFBD recruiting talen
 `src/template.html` holds all the UI and the browser math. The browser re-solves every ridge regression live (Cholesky) whenever the date range changes, so any range from 2004 to today works, including ranges that cross seasons. The JS solver was verified to match the Python one to two decimals.
 
 The Games tab uses precomputed pregame picks from `site_data.json`. Each past pick only used games from before that week.
+
+The Matchup tab has an Outlier style Line history panel, all computed in the browser from games with a closing line: how favorites of that size at that site have done since 2004, each team's record against the spread (season, last 10, as favorite, as underdog, at this site), head to head with lines, and how the model's side covered when it disagreed with the line by a similar amount (all years and 2025+ test years). It only uses games before the opened game's date, and for past games it uses that game's pregame pick, not hindsight ratings. Opening a game from the Games tab fills in the spread; it can also be typed in.
 
 ## Known gaps and next ideas
 

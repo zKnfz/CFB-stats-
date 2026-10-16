@@ -196,10 +196,12 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
           <select id="wbSel"><option value="0">Any (straight up)</option><option value="3">3</option><option value="7">7</option><option value="10">10</option><option value="14">14</option><option value="17">17</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="34">34</option><option value="41">41</option></select></div>
         <div class="field"><label for="mktA">Market % (A)</label><input type="number" id="mktA" min="0" max="100" step="1" placeholder="e.g. 82"></div>
         <div class="field"><label for="mktB">Market % (B)</label><input type="number" id="mktB" min="0" max="100" step="1" placeholder="e.g. 18"></div>
+        <div class="field"><label for="lineA">Spread (A)</label><input type="number" id="lineA" step="0.5" placeholder="e.g. -7.5"></div>
       </div>
       <div class="result" id="mres"></div>
       <div class="field" style="margin-top:8px"><button id="savePick" type="button">+ Save this pick to watchlist</button></div>
     </div>
+    <div class="panel" style="margin-top:12px" id="trends"></div>
     <p class="note">Uses the ratings from your current filters, so a "last 4 weeks" matchup projects off recent form. Enter a sportsbook or market price for either team to see the edge against this model.</p>
     <div class="tablebox" style="margin-top:12px"><table id="wl"><thead><tr>
       <th class="l">Pick</th><th>Model %</th><th>Market %</th><th>Edge</th><th class="l"></th>
@@ -421,7 +423,7 @@ function renderMatchup(){
   for (const id of ['ta','tb']){ const s=$(id), v=s.value; s.innerHTML=opts; if (v && byId.has(+v)) s.value=v; }
   if (!$('ta').dataset.init){ const top=[...teams].sort((a,b)=>a.ratingRk-b.ratingRk); $('ta').value=top[0].id; $('tb').value=top[1].id; $('ta').dataset.init=1; }
   const A = byId.get(+$('ta').value), B = byId.get(+$('tb').value), site = +$('site').value;
-  if (A===B){ $('mres').innerHTML='<p class="note">Pick two different teams.</p>'; return; }
+  if (A===B){ $('mres').innerHTML='<p class="note">Pick two different teams.</p>'; $('trends').innerHTML=''; return; }
   const margin = (A.rating-B.rating) + P.hfa*site;
   const sd = (A.gp===0 || B.gp===0) ? P.sd_early : P.sd;
   const pA = normCdf(margin/sd);
@@ -462,6 +464,93 @@ function renderMatchup(){
       ${row('Turnover margin / game',A.tom,B.tom,f1)}
     </tbody></table></div>
     <p class="note">${sd===P.sd_early?`${esc(A.gp===0?A.abbr:B.abbr)} hasn't played in this range yet, so this leans entirely on a carried over prior. `:''}Both percentages assume the final margin lands within a normal spread of ${sd.toFixed(1)} points around the projection${sd===P.sd_early?', wider than the usual '+P.sd.toFixed(1)+' since preseason picks miss by more':''}. Home field is worth ${P.hfa.toFixed(1)} points.</p>`;
+  renderTrends(A, B, site, margin);
+}
+
+// ---------- line history (graded games with a closing line) ----------
+let muDate = null;  // date of the game opened from the Games tab; trends only use games before it
+let muPred = null;  // that game's pregame pick from Team A's side, so past games don't use hindsight ratings
+let LINED = null;
+function linedGames(){ return LINED || (LINED = DATA.games.filter(g=>g[6]!==null && g[9]!==null)); }
+function teamLog(id, before){  // one team's lined games, from that team's side
+  return linedGames().filter(g=>(g[3]===id||g[4]===id) && g[1]<before).map(g=>{
+    const home = g[3]===id, margin = home ? g[6]-g[7] : g[7]-g[6], exp = home ? g[9] : -g[9];
+    return {date:g[1], opp: home?g[4]:g[3], home, neu:g[5], margin, exp, us: home?g[6]:g[7], them: home?g[7]:g[6],
+            cover: Math.sign(margin-exp)};
+  }).sort((x,y)=>x.date<y.date?-1:1);
+}
+function ats(list){ let w=0,l=0,p=0; for (const x of list) x.cover>0?w++:x.cover<0?l++:p++; return {w,l,p}; }
+function atsFmt(r){ const n=r.w+r.l; if (!n && !r.p) return '<span class="note">none</span>';
+  return `${r.w}-${r.l}${r.p?'-'+r.p:''}${n?` <span class="note">${Math.round(100*r.w/n)}%</span>`:''}`; }
+const spreadTxt = s => s===0 ? 'PK' : (s>0?'+':'−')+Math.abs(s).toFixed(1);
+function renderTrends(A, B, site, ratingA){
+  const box = $('trends'), before = muDate || '9999';
+  const pregame = muPred !== null, modelA = pregame ? muPred : ratingA;
+  const lineA = parseFloat($('lineA').value);
+  const has = !isNaN(lineA);
+  const y = seasonOf(muDate || todayET()), yi = SEASONS.indexOf(y);
+  const since2 = ALL.span[SEASONS[Math.max(0, yi-1)]][0], sinceY = ALL.span[y][0];
+  const la = teamLog(A.id, before), lb = teamLog(B.id, before);
+  const sub = (l, f) => ats(l.filter(f));
+  const siteA = site===1 ? x=>x.home&&!x.neu : site===-1 ? x=>!x.home&&!x.neu : x=>x.neu;
+  const siteB = site===-1 ? x=>x.home&&!x.neu : site===1 ? x=>!x.home&&!x.neu : x=>x.neu;
+  const siteLbl = site===0 ? 'Neutral site (2 seasons)' : 'At this site (2 seasons)';
+  const avgVs = l => { const s = l.filter(x=>x.date>=sinceY); return s.length ? s.reduce((t,x)=>t+x.margin-x.exp,0)/s.length : null; };
+  const avA = avgVs(la), avB = avgVs(lb);
+  const avFmt = v => v===null ? '<span class="note">none</span>' : `<span style="color:${v>=0?'var(--good)':'var(--bad)'}">${v>=0?'+':''}${v.toFixed(1)}</span>`;
+  const rows = [
+    [`${y} season`, sub(la,x=>x.date>=sinceY), sub(lb,x=>x.date>=sinceY)],
+    ['Last 10 games', ats(la.slice(-10)), ats(lb.slice(-10))],
+    ['As favorite (2 seasons)', sub(la,x=>x.date>=since2&&x.exp>0), sub(lb,x=>x.date>=since2&&x.exp>0)],
+    ['As underdog (2 seasons)', sub(la,x=>x.date>=since2&&x.exp<0), sub(lb,x=>x.date>=since2&&x.exp<0)],
+    [siteLbl, sub(la,x=>x.date>=since2&&siteA(x)), sub(lb,x=>x.date>=since2&&siteB(x))],
+  ];
+  const atsTable = `<div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l">Against the spread</th><th>${esc(A.abbr)}</th><th>${esc(B.abbr)}</th></tr></thead><tbody>
+    ${rows.map(([l,a,b])=>`<tr><td class="l">${l}</td><td>${atsFmt(a)}</td><td>${atsFmt(b)}</td></tr>`).join('')}
+    <tr><td class="l">Avg margin vs line, ${y}</td><td>${avFmt(avA)}</td><td>${avFmt(avB)}</td></tr>
+    </tbody></table></div>`;
+
+  // head to head, from A's side
+  const h2h = la.filter(x=>x.opp===B.id).slice(-6).reverse();
+  const h2hTable = h2h.length ? `<div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l">Last meetings</th><th>Score</th><th>${esc(A.abbr)} line</th><th>Covered</th></tr></thead><tbody>
+    ${h2h.map(x=>`<tr><td class="l">${fmtDate(x.date)}${x.neu?' (N)':x.home?'':' (away)'}</td><td>${x.us}-${x.them}</td><td>${spreadTxt(-x.exp)}</td>
+      <td class="${x.cover>0?'W':x.cover<0?'L':''}">${x.cover>0?esc(A.abbr):x.cover<0?esc(B.abbr):'Push'}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="note">No meetings with a posted line since 2004.</p>';
+
+  let lineHtml = `<p class="note">Enter a spread for ${esc(A.abbr)} above (negative if favored, like −7.5) to see how teams have done at that number and how this model's side has done when it disagreed with the line by this much. Games opened from the Games tab fill this in when a line is posted.</p>`;
+  if (has){
+    const favIsA = lineA < 0, s = Math.abs(lineA);
+    const fav = favIsA ? A : B, dog = favIsA ? B : A;
+    const favSite = site===0 ? 0 : ((site===1)===favIsA ? 1 : -1);  // 1 fav at home, -1 fav on road, 0 neutral
+    const lo = Math.max(0, s-1), hi = s+1;
+    const sim = linedGames().filter(g=>{ const v=Math.abs(g[9]); if (v<lo||v>hi||g[1]>=before) return false;
+      if (favSite===0) return g[5]; if (g[5]) return false; return favSite===1 ? g[9]>0 : g[9]<0; });
+    const summ = list => { let su=0,cw=0,cl=0,mg=0;
+      for (const g of list){ const homeFav = g[9]>=0, m = homeFav ? g[6]-g[7] : g[7]-g[6], e = Math.abs(g[9]);
+        if (m>0) su++; if (m>e) cw++; else if (m<e) cl++; mg += m; }
+      return {n:list.length, su: list.length?su/list.length:0, cov: cw+cl?cw/(cw+cl):0, mg: list.length?mg/list.length:0}; };
+    const all = summ(sim), recent = summ(sim.filter(g=>g[1]>=ALL.span[SEASONS[Math.max(0,yi-4)]][0]));
+    const where = favSite===1 ? 'at home' : favSite===-1 ? 'on the road' : 'at a neutral site';
+    const pc = v => (v*100).toFixed(1)+'%';
+
+    // model vs this line: same edge buckets as the Backtest tab
+    const edgeA = modelA - (-lineA);  // points the model likes A by, beyond the market
+    const side = edgeA>=0 ? A : B, e = Math.abs(edgeA);
+    const BK = [[0,1],[1,2],[2,3],[3,5],[5,Infinity]], bk = BK.find(([a,b])=>e>=a&&e<b);
+    const mb = list => { let w=0,l=0; for (const g of list){ if (g[8]===null) continue; const d = g[8]-g[9]; const ad = Math.abs(d);
+        if (ad<bk[0]||ad>=bk[1]||d===0) continue; const r = (g[6]-g[7]) - g[9]; if (r===0) continue; (Math.sign(r)===Math.sign(d)) ? w++ : l++; }
+      return {w,l,n:w+l,p:w+l?w/(w+l):0}; };
+    const mAll = mb(linedGames().filter(g=>g[1]<before)), mTest = mb(linedGames().filter(g=>g[1]<before && +seasonOf(g[1])>=2025));
+    const bkLbl = bk[1]===Infinity ? `${bk[0]}+` : `${bk[0]} to ${bk[1]}`;
+    lineHtml = `
+      <div class="headline" style="font-size:0.85em">${esc(fav.abbr)} ${spreadTxt(-s)} ${where}</div>
+      <p>Since 2004, FBS favorites of ${lo.toFixed(1)} to ${hi.toFixed(1)} points ${where} won <b>${pc(all.su)}</b> straight up and covered <b>${pc(all.cov)}</b>, winning by ${all.mg.toFixed(1)} on average. <span class="note">${all.n.toLocaleString()} games. Last 5 seasons: covered ${pc(recent.cov)} of ${recent.n}.</span></p>
+      <p>${pregame?"Model's pregame pick":'Model'} has ${esc(A.abbr)} ${modelA>=0?'by':'losing by'} ${Math.abs(modelA).toFixed(1)}, so it likes <b>${esc(side.abbr)}</b> by ${e.toFixed(1)} points more than the line.
+        When the model's pregame pick disagreed with the closing line by ${bkLbl} points, its side covered <b>${mAll.n?pc(mAll.p):'n/a'}</b> of ${mAll.n.toLocaleString()} games (all years)
+        and <b>${mTest.n?pc(mTest.p):'n/a'}</b> of ${mTest.n} in the 2025+ test years. <span class="note">Break even at −110 is 52.4%. The all years number includes seasons the model was tuned on, so it runs optimistic; test years are the honest one, and small samples swing a lot.</span></p>`;
+  }
+  box.innerHTML = `<h3 style="margin:0 0 8px">Line history</h3>${lineHtml}${atsTable}${h2hTable}
+    <p class="note">Against the spread uses each game's closing line and only games before ${muDate?fmtDate(muDate):'today'}. A cover means beating the line, a push means landing exactly on it.</p>`;
 }
 function btSegOf(year){
   if (year >= 2025) return 'test';
@@ -665,7 +754,8 @@ function renderGames(){
     const tline = (id,opp,sc,other,isHome,ownK,oppK)=>{
       const siteVal = neu?0:(isHome?1:-1);
       const kAttr = (ownK!=null&&oppK!=null) ? ` data-ka="${ownK}" data-kb="${oppK}"` : '';
-      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}"${kAttr} tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
+      const vAttr = (veg===null ? '' : ` data-line="${isHome ? -veg : veg}"`) + (pred===null ? '' : ` data-pred="${isHome ? pred : -pred}"`);
+      return `<div class="${done&&sc>other?'win':''}"><span class="tmlink" data-id="${id}" data-opp="${opp}" data-site="${siteVal}" data-date="${date}"${kAttr}${vAttr} tabindex="0" role="button">${rk(id)}${esc(nm(id))}</span>${done?`<span class="sc">${sc}</span>`:''}</div>`;
     };
     return `<div class="game"><div class="tm">${tm||'TBA'}${neu?'<br>Neutral':''}</div>
       <div class="teams">${tline(a,h,as,hs,false,ka,kh)}${tline(h,a,hs,as,true,kh,ka)}<span class="tm">${neu?'':'at '+esc(ab(h))}</span></div>
@@ -687,17 +777,19 @@ $('gsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(
   gsort = b.dataset.sort;
   document.querySelectorAll('#gsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b));
   renderGames(); });
-function goToMatchup(a, opp, siteVal, date, kA, kB){
+function goToMatchup(a, opp, siteVal, date, kA, kB, lineA, predA){
   state.season = seasonOf(date); state.open = null;
   applyPreset('all'); syncControls(); refresh();
   $('ta').value = a; $('ta').dataset.init = 1; $('tb').value = opp; $('site').value = siteVal;
   $('mktA').value = kA ?? ''; $('mktB').value = kB ?? '';
+  $('lineA').value = lineA ?? ''; muDate = date; muPred = predA ?? null;
   renderMatchup(); save();
   for (const t of ['ratings','games','matchup','backtest','about']){ const on = t==='matchup'; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
 }
 function tmlinkGo(el){
   goToMatchup(+el.dataset.id, +el.dataset.opp, +el.dataset.site, el.dataset.date,
-    el.dataset.ka ? +el.dataset.ka : null, el.dataset.kb ? +el.dataset.kb : null);
+    el.dataset.ka ? +el.dataset.ka : null, el.dataset.kb ? +el.dataset.kb : null,
+    el.dataset.line !== undefined ? +el.dataset.line : null, el.dataset.pred !== undefined ? +el.dataset.pred : null);
 }
 $('glist').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
 $('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(!el) return; tmlinkGo(el); });
@@ -737,8 +829,9 @@ for (const id of ['from','to']) $(id).addEventListener('change', e=>{
   state.preset=null; syncControls(); refresh(); });
 $('conf').addEventListener('change', e=>{ state.conf=e.target.value; renderTable(); save(); });
 $('prior').addEventListener('change', e=>{ state.prior=e.target.checked; refresh(); save(); });
-for (const id of ['ta','tb','site','wbSel']) $(id).addEventListener('change', renderMatchup);
-for (const id of ['mktA','mktB']) $(id).addEventListener('input', renderMatchup);
+for (const id of ['site','wbSel']) $(id).addEventListener('change', renderMatchup);
+for (const id of ['mktA','mktB','lineA']) $(id).addEventListener('input', renderMatchup);
+for (const id of ['ta','tb']) $(id).addEventListener('change', ()=>{ muDate = null; muPred = null; $('lineA').value = ''; renderMatchup(); });
 
 function loadWL(){ try{ return JSON.parse(localStorage.getItem('gtr_wl')||'[]'); }catch(e){ return []; } }
 function saveWL(list){ try{ localStorage.setItem('gtr_wl', JSON.stringify(list)); }catch(e){} }
