@@ -201,6 +201,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .anadv{margin-top:8px}.anadv>summary{cursor:pointer}.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:4px 10px}
 .ansum{margin-top:10px}.anul{margin:6px 0 0;padding-left:18px;font-size:14px}.anul li{margin:2px 0}
 .cov{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.covi{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:2px 7px}
+.vso tr.now td{background:var(--accent-soft)}.vso{width:100%}.vso td.l{white-space:normal;min-width:7.5em}
+@media (max-width:560px){.vso{font-size:11.5px}.vso td,.vso th{padding:6px 2px}.vso td.l{min-width:6.5em}.vso .src{display:none}.vso tr.now td.l b::after{content:' •'}}
 .covi.ok{color:var(--good)}.covi.no{color:var(--muted);border-style:dashed}
 #gv .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 #gv .seg button{font:600 13px var(--data);background:var(--panel);color:var(--muted);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer;min-height:36px}
@@ -1721,6 +1723,58 @@ function openCheck(e){  // what the line and the result did after openers like t
   if (t.n>=100 && lo>0.524) return {lbl:'Beat the opener', cls:'hg1', txt};
   return {lbl: tw!=null && t.m>=100 && tw>ta+0.15 ? 'Line tends to follow' : 'Unproven', cls: tw!=null && t.m>=100 && tw>ta+0.15 ? 'hg1' : 'na', txt}; }
 
+// ---------- vs opponents like this: each team's record by opponent type, on the game page ----------
+// Opponent strength uses each season's end of season T-Rank (season to date for the current one), so past
+// games are described with hindsight on purpose: "how did they do against teams that turned out top 25".
+function vsoGames(id, before, from){  // finished games from this team's side, with the opponent's profile that season
+  const T = DATA.tot || {};
+  return teamGames(id).filter(g=>g[1]<before && g[1]>=from).map(g=>{ const home = g[3]===id, opp = home?g[4]:g[3], y = seasonOf(g[1]), F = FINAL[y], oe = F ? F.get(opp) : null;
+    const conf = (DATA.seasons[y]||{}).conf || {}, m = home ? g[6]-g[7] : g[7]-g[6], exp = g[9]==null ? null : (home ? g[9] : -g[9]), tot = T[g[0]];
+    return {g, gid:g[0], date:g[1], opp, home, neu:g[5], us: home?g[6]:g[7], them: home?g[7]:g[6], margin:m, exp, cover: exp==null ? null : Math.sign(m-exp),
+      tot: tot ?? null, ou: tot==null ? null : Math.sign(g[6]+g[7]-tot), oRating: oe ? oe.rating : null, oRk: oe ? oe.ratingRk : null, oOffRk: oe ? oe.offRk : null, oDefRk: oe ? oe.defRk : null,
+      oConf: conf[opp] ?? null, confGame: conf[opp]!=null && conf[opp]===conf[id] && conf[id]!=='FBS Independents'}; }).sort((a,b)=>a.date<b.date?-1:1); }
+function vsoRows(id, opp, date, from){
+  const y = seasonOf(date), F = FINAL[y], oe = F ? F.get(opp) : null, conf = (DATA.seasons[y]||{}).conf || {}, oc = conf[opp], gs = vsoGames(id, date, from);
+  const rk = oe ? oe.ratingRk : null, r = oe ? oe.rating : null, tier = (lo,hi) => x => x.oRk!=null && x.oRk>=lo && x.oRk<=hi;
+  const rows = [
+    [`vs ${nm(opp)}`, x=>x.opp===opp, true],
+    ['vs top 10', tier(1,10), rk!=null && rk<=10],
+    ['vs top 25', tier(1,25), rk!=null && rk<=25],
+    ['vs 26 to 50', tier(26,50), rk!=null && rk>=26 && rk<=50],
+    ['vs 51 to 100', tier(51,100), rk!=null && rk>=51 && rk<=100],
+    ['vs 101+', tier(101,999), rk!=null && rk>=101],
+    [r==null ? null : `vs teams rated like ${ab(opp)}`, x=>x.oRating!=null && Math.abs(x.oRating-r)<=5, true],
+    ['vs top 25 offense', x=>x.oOffRk!=null && x.oOffRk<=25, oe && oe.offRk<=25],
+    ['vs top 25 defense', x=>x.oDefRk!=null && x.oDefRk<=25, oe && oe.defRk<=25],
+    [oc && oc!=='FBS Independents' && oc!==conf[id] ? `vs ${oc} teams` : null, x=>x.oConf===oc, true],  // same conference is the Conference games row
+    ['Conference', x=>x.confGame, oc!=null && oc===conf[id] && oc!=='FBS Independents'],
+    ['Non conference', x=>!x.confGame, !(oc!=null && oc===conf[id] && oc!=='FBS Independents')],
+  ].filter(x=>x[0]);
+  return rows.map(([lbl, f, now])=>{ const list = gs.filter(f), w = list.filter(x=>x.margin>0).length;
+    return {lbl, list, now, w, l: list.filter(x=>x.margin<0).length, avg: list.length ? list.reduce((t,x)=>t+x.margin,0)/list.length : null,
+      ats: rate(list.filter(x=>x.cover!=null), x=>x.cover), ou: rate(list.filter(x=>x.ou!=null), x=>x.ou)}; }); }
+function gvVsOpp(v){
+  const y = seasonOf(v.date), yi = SEASONS.indexOf(y), per = GV.vp || 'l3';
+  const from = per==='season' ? ALL.span[y][0] : per==='l3' ? ALL.span[SEASONS[Math.max(0, yi-2)]][0] : '0000';
+  const chips = [['season',`${y} only`],['l3','Last 3 seasons'],['all','Since 2004']].map(([k,l])=>`<button data-gvp="${k}" aria-pressed="${per===k}">${l}</button>`).join('');
+  const side = id => { const opp = id===v.h ? v.a : v.h, rows = vsoRows(id, opp, v.date, from);
+    return `<div class="panel"><b>${esc(nm(id))}</b> <span class="note">opponent ${esc(ab(opp))}: ${(()=>{ const e = FINAL[y] && FINAL[y].get(opp); return e ? `T-Rank #${e.ratingRk}, offense #${e.offRk}, defense #${e.defRk}` : 'no rating'; })()}</span>
+      <div class="tablebox"><table class="cmp vso"><thead><tr><th class="l">Opponent (T-Rank)</th><th>G</th><th>SU</th><th title="Average scoring margin">Avg</th><th>ATS</th><th>O/U</th></tr></thead><tbody>${
+        rows.map((r,i)=>`<tr class="${r.now?'now':''}"><td class="l">${r.now?'<b>':''}${esc(r.lbl)}${r.now?'</b> <span class="src d">TONIGHT</span>':''}</td><td>${r.list.length?`<span class="aud" data-vso="${id}|${i}" tabindex="0">${r.list.length}</span>`:'0'}</td>
+          <td>${r.list.length?`<span class="cell ${heatCls(r.w, r.w+r.l)}">${r.w}-${r.l}</span>`:'<span class="na">N/A</span>'}</td><td>${naTxt(r.avg,f1)}</td><td>${trendCell(r.ats)}</td><td>${trendCell(r.ou)}</td></tr>`).join('')
+      }</tbody></table></div><div class="vsoAud" id="vsoAud${id}"></div></div>`; };
+  return `<div class="seg" role="group" aria-label="Seasons">${chips}</div>
+    <div class="chartrow" style="margin-top:10px">${side(v.a)}${side(v.h)}</div>
+    <p class="note">Finished games before ${fmtDate(v.date)}. Opponent tiers use each season's end of season T-Rank (this season's is to date), so past games are grouped by how good opponents turned out to be, <span class="src h">HIST</span> hindsight on purpose. "Rated like" means within 5 points of tonight's opponent's rating. Highlighted rows (TONIGHT, or a dot on phones) apply to this game. ATS and O/U only count games with a posted line; records are colored only with 5+ games. Tap a game count to see the games. Splits like these are picked from many possible ones, so a lopsided record on a small sample is usually noise.</p>`; }
+function vsoAudit(id, i){ const g = DATA.games.find(x=>x[0]===GV.gid), v = gameView(g), y = seasonOf(v.date), yi = SEASONS.indexOf(y), per = GV.vp || 'l3';
+  const from = per==='season' ? ALL.span[y][0] : per==='l3' ? ALL.span[SEASONS[Math.max(0, yi-2)]][0] : '0000';
+  const r = vsoRows(id, id===v.h?v.a:v.h, v.date, from)[i];
+  return `<div class="panel" style="margin-top:8px"><b>${esc(nm(id))}: ${esc(r.lbl)}</b><div style="overflow-x:auto"><table class="cmp"><thead><tr><th class="l">Date</th><th class="l">Opponent</th><th>Score</th><th>Spread</th><th>ATS</th><th>Total</th></tr></thead><tbody>${
+    [...r.list].reverse().map(x=>`<tr><td class="l">${fmtDate(x.date,true)} ${seasonOf(x.date)}</td><td class="l">${x.neu?'vs':x.home?'vs':'@'} ${teamLinkHtml(x.opp, esc(ab(x.opp)))}${x.oRk?` <span class="r">#${x.oRk}</span>`:''}</td>
+      <td class="${x.margin>0?'W':x.margin<0?'L':''}">${x.margin>0?'W':x.margin<0?'L':'T'} ${x.us}-${x.them}</td><td>${x.exp==null?'<span class="na">N/A</span>':spreadTxt(-x.exp)}</td>
+      <td class="${x.cover>0?'W':x.cover<0?'L':''}">${x.cover==null?'':x.cover>0?'Cover':x.cover<0?'Miss':'Push'}</td><td>${x.tot==null?'<span class="na">N/A</span>':`${x.ou>0?'O':x.ou<0?'U':'P'} ${x.tot}`}</td></tr>`).join('')
+  }</tbody></table></div><p class="note">Rank shown is that opponent's end of season T-Rank.</p></div>`; }
+
 // ---------- Game Research view ----------
 let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
 function gvRangeSet(kind){
@@ -1936,9 +1990,11 @@ function renderGame(){
     <div class="betbar" style="margin-top:10px"><div><b>Signal agreement: <span class="cell ${sig.cls}">${sig.lbl}</span></b>${sig.side?` <span class="note">for the model's spread side, ${esc(ab(sig.side))}</span>`:''}</div></div>
     <ul class="anul">${sig.why.map(x=>`<li>${x}</li>`).join('')}</ul>
     <p class="note">Checks counted: the edge size's 2025+ record and line movement since open. Strong: a 3+ point disagreement with both supporting. Moderate: one supporting, none against. Conflicted: a check against. Weak: nothing supporting. Analogs are shown but not counted, because their cover rates have not predicted covers. This counts agreement between inputs; none of them has beaten closing lines out of sample, so it is not a probability or a pick.</p></div>`;
-  box.innerHTML = header + gvOutlier(v) + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
+  box.innerHTML = header + gvOutlier(v) + `<h3 class="sec">Vs opponents like this</h3>${gvVsOpp(v)}` + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
 }
 $('gv').addEventListener('click', e=>{
+  const vp = e.target.closest('[data-gvp]'); if (vp){ GV.vp = vp.dataset.gvp; renderGame(); return; }
+  const vs = e.target.closest('[data-vso]'); if (vs){ const [id, i] = vs.dataset.vso.split('|').map(Number), box = $('vsoAud'+id); box.innerHTML = box.dataset.k===vs.dataset.vso ? '' : vsoAudit(id, i); box.dataset.k = box.innerHTML ? vs.dataset.vso : ''; return; }
   const ap = e.target.closest('[data-anp]'); if (ap){ AN.preset = ap.dataset.anp; AN.more = false; renderGame(); return; }
   if (e.target.closest('[data-anm]')){ AN.market = !AN.market; renderGame(); return; }
   const an = e.target.closest('[data-ann]'); if (an){ AN.n = +an.dataset.ann; renderGame(); return; }
@@ -1954,7 +2010,7 @@ $('gv').addEventListener('click', e=>{
   if (e.target.id==='gvMatch'){ const g = DATA.games.find(x=>x[0]===GV.gid); openGameMatchup(g); return; }
   if (e.target.id==='gvSave') wlSaveGame(GV.gid);
 });
-$('gv').addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest('[data-aud]')) e.target.click(); });
+$('gv').addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest('[data-aud],[data-vso]')) e.target.click(); });
 
 // ---------- Team Research view ----------
 let TV = {id:null, season:null, period:'season', from:'', to:''};
