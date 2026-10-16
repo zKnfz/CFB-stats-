@@ -49,6 +49,10 @@ def ridge(r, ids, num, wcol, lam, prior=None, decay_w=None):
 
 
 LAMS = {"E": 100, "NT": 100, "SR": 100, "PTS": 3, "EX": 150}
+# display and matchup fingerprint stats, not in the rating. Same definitions and pulls as the page.
+FP_FEATS = {"PE": ("pepa", "pplays"), "RE": ("repa", "rplays"), "HV": ("hav", "plays"), "FD": ("tpts", "trips")}
+FP_LAMS = {"PE": 100, "RE": 100, "HV": 100, "FD": 10}
+SNAP_FEATS = ["E", "NT", "SR", "PTS", "EX", "PE", "RE", "HV", "FD"]  # per team o and d saved for every game
 
 
 def _preseason_adj(year, ids):
@@ -71,16 +75,19 @@ def _preseason_adj(year, ids):
     return {t: c["talent"] * tz.get(t, 0.0) + c["returning"] * rz.get(t, 0.0) for t in ids}
 
 
-def final_prior(year, ids, shrink):
+def final_prior(year, ids, shrink, feats=None):
     """Last season's final o,d per feature, shrunk; missing teams get a below-average default.
-    Optionally nudged by this season's talent/returning production z-scores (PRESEASON_COEF)."""
+    Optionally nudged by this season's talent/returning production z-scores (PRESEASON_COEF).
+    feats=FP_FEATS gives the fingerprint-only stats a prior too (no talent nudge: havoc allowed is
+    a lower-is-better offense stat, so the nudge's sign would not mean the same thing)."""
     out = {}
     if year - 1 not in R:
         return None
     r = R[year - 1]; pids = sorted(set(r.off) | set(r["def"]))
-    padj = _preseason_adj(year, ids)
-    for f, (num, wc) in FEATS.items():
-        o, d, mu, h = ridge(r, pids, num, wc, LAMS[f])
+    padj = _preseason_adj(year, ids) if feats is None else None
+    lams = LAMS if feats is None else FP_LAMS
+    for f, (num, wc) in (FEATS if feats is None else feats).items():
+        o, d, mu, h = ridge(r, pids, num, wc, lams[f])
         om = dict(zip(pids, o)); dm = dict(zip(pids, d))
         lo, hi = np.percentile(o, 20), np.percentile(d, 80)  # newcomers start weak
         base_o = np.array([om.get(t, lo) for t in ids])
@@ -94,9 +101,43 @@ def final_prior(year, ids, shrink):
     return out
 
 
-def walk(year, shrink=0.9, halflife=None):
+def snapshot(hist, ids, pri, pri_fp, gp_rows=None):
+    """Every team's o and d for SNAP_FEATS from `hist` only (deviations from that fit's league
+    average, so eras compare), plus games played and opponents' average NT/SR/PTS nets so far
+    (SOS, before beta). pri/pri_fp: priors from final_prior (None = shrink to average).
+    Returns {team: {"E": (o, d), ..., "gp": n, "sos": (NT, SR, PTS) or None}}."""
+    n = len(ids); vals = {}
+    for f in SNAP_FEATS:
+        num, wc = FEATS[f] if f in FEATS else FP_FEATS[f]
+        lam = LAMS[f] if f in LAMS else FP_LAMS[f]
+        p = (pri if f in FEATS else pri_fp)
+        p = None if p is None else p[f]
+        if len(hist):
+            o, d, mu, h = ridge(hist, ids, num, wc, lam, p)
+        else:
+            o, d = (p[:n], p[n:]) if p is not None else (np.zeros(n), np.zeros(n))
+        vals[f] = (o, d)
+    idx = {t: i for i, t in enumerate(ids)}
+    net = {f: vals[f][0] - vals[f][1] for f in ("NT", "SR", "PTS")}
+    opps = {}
+    for off, de in zip(hist.off, hist["def"]):  # one row per team per game, so each game counts once per side
+        opps.setdefault(off, []).append(de)
+    out = {}
+    for t, i in idx.items():
+        op = [idx[x] for x in opps.get(t, []) if x in idx]
+        out[t] = {f: (float(vals[f][0][i]), float(vals[f][1][i])) for f in SNAP_FEATS}
+        out[t]["gp"] = len(opps.get(t, []))
+        out[t]["sos"] = tuple(float(net[f][op].mean()) for f in ("NT", "SR", "PTS")) if op else None
+    return out
+
+
+def walk(year, shrink=0.9, halflife=None, snap=False):
+    """Pregame features for every game: only games from before that week are used.
+    snap=True also stores each side's full pregame team snapshot (see snapshot()) as h_*/a_* columns,
+    for the matchup fingerprints in export3.py."""
     rows = R[year]; games = D[year][1]; ids = sorted(D[year][2].team_id)
     pri = final_prior(year, ids, shrink)
+    pri_fp = final_prior(year, ids, shrink, FP_FEATS) if snap else None
     games = games.assign(key=games.season_type * 100 + games.week)
     out = []
     for key, gw in games.groupby("key"):
@@ -119,11 +160,20 @@ def walk(year, shrink=0.9, halflife=None):
                 po, pd_, mu_pts = dict(zip(ids, o)), dict(zip(ids, d)), mu
         if len(nets) < len(FEATS):
             continue
+        sn = snapshot(hist, ids, pri, pri_fp) if snap else None
         for g in gw.itertuples():
             rec = {"year": year, "key": key, "gid": g.game_id, "home": 0 if g.neutral_site else 1,
                    "margin": g.home_score - g.away_score, "vegas": g.home_spread_margin, "ngames": len(hist)}
             for f in FEATS:
                 rec[f] = nets[f][g.home_id] - nets[f][g.away_id]
             rec["ptot"] = 2 * mu_pts + po[g.home_id] + pd_[g.away_id] + po[g.away_id] + pd_[g.home_id]
+            if sn:
+                for side, t in (("h", g.home_id), ("a", g.away_id)):
+                    s_ = sn[t]
+                    for f in SNAP_FEATS:
+                        rec[f"{side}_{f}_o"], rec[f"{side}_{f}_d"] = s_[f]
+                    rec[f"{side}_gp"] = s_["gp"]
+                    for f, v in zip(("NT", "SR", "PTS"), s_["sos"] or (np.nan,) * 3):
+                        rec[f"{side}_sos_{f}"] = v
             out.append(rec)
     return pd.DataFrame(out)

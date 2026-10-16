@@ -190,6 +190,21 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .hg2{background:var(--good-bg);color:var(--good);font-weight:700}.hg1{color:var(--good);font-weight:600}
 .hr2{background:var(--bad-bg);color:var(--bad);font-weight:700}.hr1{color:var(--bad);font-weight:600}
 .src{display:inline-block;font:700 9px var(--data);letter-spacing:.08em;border-radius:3px;padding:0 4px;vertical-align:1px}
+.anc{border:1px solid var(--line);border-radius:6px;margin-top:8px;background:var(--panel)}
+.anc>summary{list-style:none;cursor:pointer;padding:10px 12px}.anc>summary::-webkit-details-marker{display:none}
+.anc[open]>summary .anwhy{color:var(--ink)}.anc>.tablebox,.anc>p{margin:0 12px 10px}
+.anh{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.anm{display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--muted)}
+.anm b{color:var(--ink);font-family:var(--data)}.anb{border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:12px}
+.anwhy{margin-top:4px;text-decoration:underline}
+.anw,.tlt{width:100%}.anw td.l,.tlt td.l{white-space:normal;min-width:9em}.anw td,.anw th,.tlt td,.tlt th{padding:6px 6px}
+@media (max-width:560px){.anw,.tlt{font-size:12px}.anw th,.tlt th{font-size:11px;white-space:normal}}.anw td.anok{background:var(--good-bg)}.anw td.anbad{color:var(--bad)}
+.anadv{margin-top:8px}.anadv>summary{cursor:pointer}.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.ansum{margin-top:10px}.anul{margin:6px 0 0;padding-left:18px;font-size:14px}.anul li{margin:2px 0}
+.cov{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.covi{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:2px 7px}
+.covi.ok{color:var(--good)}.covi.no{color:var(--muted);border-style:dashed}
+#gv .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+#gv .seg button{font:600 13px var(--data);background:var(--panel);color:var(--muted);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer;min-height:36px}
+#gv .seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
 .src.m{background:var(--accent-soft);color:var(--accent)}.src.k{background:var(--line);color:var(--ink)}.src.h{background:var(--line);color:var(--muted)}.src.d{border:1px solid var(--line);color:var(--muted)}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px 12px;align-items:end}
 .fgrid input[type=number]{width:100%}.fgrid select,.fgrid input[type=text],.fgrid input[type=date]{width:100%}
@@ -1451,6 +1466,239 @@ function confidence(kind, e){  // honest label: has this size of disagreement be
   return {lbl: Math.abs(e)<1 ? 'No edge' : 'Model lean, unproven', cls:'na', txt};
 }
 
+// ---------- Games Like This: historical matchup analogs ----------
+// Each game's fingerprint is both teams' pregame snapshots, made in export3.py from model.walk: only games
+// from before that week feed them, so nothing from the game itself or later can leak in. The browser orients
+// each game, standardizes the features and finds nearest neighbors. Results are never used to pick analogs,
+// only described afterwards.
+const FPX = (()=>{ const F = DATA.fp; if (!F || !F.rows || !F.rows.length) return null;
+  const ci = {}; F.cols.forEach((c,i)=>ci[c]=i+1);
+  const by = new Map(); for (const r of F.rows) by.set(r[0], r);
+  return {by, get:(r,c)=>{ const i = ci[c], x = r[i]; return x==null ? null : x/F.scale[i-1]; }}; })();
+// Team A is the side the pregame model favored (home on a tie), so every analog lines up the same way:
+// "A-like" is always the projected stronger side, and site is from A's point of view.
+const anSide = g => g[8]==null || g[8]>=0 ? 'h' : 'a';
+const pctD = x => (x>=0?'+':'−')+Math.abs(x*100).toFixed(1)+'%';
+const AN_STATS = [  // per play matchup stats: [key, label, format, dimension]. Values are deviations from that week's FBS average.
+  ['E','EPA/play',f3,'eff'], ['SR','Success rate',pctD,'eff'], ['EX','Explosiveness',f3,'style'], ['RE','Rush EPA/play',f3,'style'],
+  ['PE','Pass EPA/play',f3,'style'], ['HV','Havoc rate',pctD,'style'], ['FD','Points per trip past the 40',x=>(x>=0?'+':'−')+Math.abs(x).toFixed(2),'style']];
+// every similarity feature in one place. z: 'season' standardizes within each season (stat recording and
+// league scoring drift), 'all' across every season (point scale features that mean the same thing in any year).
+const AN_FEATS = [
+  {k:'gap', lab:'Rating gap, A minus B', dim:'quality', z:'all', fmt:f1},
+  {k:'rA', lab:'Team A rating', dim:'quality', z:'all', fmt:f1},
+  {k:'rB', lab:'Team B rating', dim:'quality', z:'all', fmt:f1},
+  {k:'site', lab:'Team A site', dim:'quality', z:'all', fmt:x=>x>0?'Home':x<0?'Away':'Neutral'},
+  ...AN_STATS.flatMap(([s,l,f,d])=>[{k:s+'a', lab:`${l}: A offense vs B defense`, dim:d, z:'season', fmt:f},
+                                    {k:s+'b', lab:`${l}: B offense vs A defense`, dim:d, z:'season', fmt:f}]),
+  {k:'sosA', lab:'Team A schedule so far', dim:'sched', z:'all', fmt:f1},
+  {k:'sosB', lab:'Team B schedule so far', dim:'sched', z:'all', fmt:f1},
+  {k:'gp', lab:'Fewest FBS games played so far', dim:'sched', z:'all', fmt:x=>x.toFixed(0)},
+  {k:'mPred', lab:'Model margin for A', dim:'model', z:'all', fmt:f1},
+  {k:'mTot', lab:'Model total', dim:'model', z:'all', fmt:x=>x.toFixed(1)},
+  {k:'kSpread', lab:'Closing spread, Team A', dim:'market', z:'all', fmt:x=>spreadTxt(-x)},
+  {k:'kTot', lab:'Market total', dim:'market', z:'all', fmt:x=>x.toFixed(1)},
+];
+const AN_DIMS = [['quality','Team quality'],['eff','Efficiency'],['style','Style'],['sched','Schedule and sample'],['model','Model projection'],['market','Market']];
+// presets: feature weights (0 or missing = unused). Weights are relative importance per standardized feature.
+const AN_PRESETS = {
+  balanced: {lab:'Balanced', note:'Team strength, efficiency both ways, a little style and schedule. No market numbers unless you add them.',
+    w:{gap:3, rA:1, rB:1, site:1, Ea:1.5, Eb:1.5, SRa:1, SRb:1, EXa:.5, EXb:.5, REa:.5, REb:.5, PEa:.5, PEb:.5, HVa:.25, HVb:.25, FDa:.25, FDb:.25, sosA:.25, sosB:.25, gp:.5, mTot:1}},
+  efficiency: {lab:'Efficiency', note:'How well each offense moves the ball against the other defense, by EPA and success rate.',
+    w:{gap:1, site:.5, Ea:3, Eb:3, SRa:2, SRb:2, EXa:1, EXb:1}},
+  style: {lab:'Style', note:'How each side gets there: run vs pass, big plays, havoc and finishing drives.',
+    w:{gap:1, REa:2, REb:2, PEa:2, PEb:2, EXa:1.5, EXb:1.5, HVa:1, HVb:1, FDa:1, FDb:1, mTot:1}},
+  market: {lab:'Market', note:'Same closing spread and total, at the same kind of site. Needs a posted line.',
+    w:{kSpread:4, kTot:3, site:1, gap:.5}},
+  model: {lab:'Model', note:'Same model projection: margin and total, at the same kind of site.',
+    w:{mPred:4, mTot:3, site:1, rA:.5, rB:.5}},
+};
+const AN_MARKET_ADD = {kSpread:2, kTot:1};  // "Add market" on the other presets
+// similarity = 100 × exp(−d²/2), d = weighted root mean square gap in standard deviations over the shared features.
+// Thresholds were set from how close the nearest games usually are: under Balanced the median game's closest
+// match is about 91% and its 10th closest about 86% (see CLAUDE.md).
+const AN_MIN_SIM = 70, AN_GOOD = 80, AN_EXC = 90;
+const AN_MIN_COVER = 0.8;  // a historical game must have at least 80% of this game's feature weight to be compared
+const AN_MAX = 50;
+// backtest of analog cover rates as a predictor (every lined game 2010 on, Balanced, 25 analogs, quality Good+ with 10+ lined):
+// when analogs covered 55%+ the A-like side covered 50.4% of 5,443; when 45% or less the other side covered 50.3% of 1,812.
+// Market preset: 51.4% of 7,946. Run Oct 2026 (pw_anbt in the session scratchpad; rerun the same loop to refresh).
+const AN_BT = {txt:'since 2010, analogs covering 55%+ (or 45% or less) picked the next cover 50.4% of 7,255 games, a coin flip.'};
+function anVec(g){ const r = FPX && FPX.by.get(g[0]); if (!r) return null;
+  const A = anSide(g), B = A==='h'?'a':'h', sg = A==='h'?1:-1, x = c => FPX.get(r, c), v = {sg, A: A==='h'?g[3]:g[4], B: A==='h'?g[4]:g[3]};
+  v.rA = x(A+'_r'); v.rB = x(B+'_r'); v.gap = v.rA!=null&&v.rB!=null ? v.rA-v.rB : null; v.site = g[5] ? 0 : sg;
+  for (const [s] of AN_STATS){ const oa = x(`${A}_${s}_o`), db = x(`${B}_${s}_d`), ob = x(`${B}_${s}_o`), da = x(`${A}_${s}_d`);
+    v[s+'a'] = oa!=null&&db!=null ? oa+db : null; v[s+'b'] = ob!=null&&da!=null ? ob+da : null; }
+  v.sosA = x(A+'_sos'); v.sosB = x(B+'_sos');
+  const ga = x(A+'_gp'), gb = x(B+'_gp'); v.gp = ga!=null&&gb!=null ? Math.min(ga,gb) : null; v.gpA = ga; v.gpB = gb;
+  v.mPred = g[8]==null ? null : sg*g[8]; v.mTot = (DATA.ptot||{})[g[0]] ?? null;
+  v.kSpread = g[9]==null ? null : sg*g[9]; v.kTot = (DATA.tot||{})[g[0]] ?? null;
+  return v; }
+let ANP = null;  // the pool: every game with a fingerprint, its oriented values and z-scores, built on first use
+function anPool(){ if (ANP) return ANP;
+  const K = AN_FEATS.length, items = [], acc = {all: AN_FEATS.map(()=>[0,0,0])}, idx = new Map();
+  for (const g of DATA.games){ const v = anVec(g); if (!v) continue; const y = seasonOf(g[1]); acc[y] ||= AN_FEATS.map(()=>[0,0,0]);
+    AN_FEATS.forEach((f,i)=>{ const x = v[f.k]; if (x==null) return; const a = acc[f.z==='all'?'all':y][i]; a[0]++; a[1]+=x; a[2]+=x*x; });
+    items.push({g, v, y}); }
+  const st = {}; for (const key in acc) st[key] = acc[key].map(([n,s,ss])=>{ const m = n?s/n:0, sd = n>1?Math.sqrt(Math.max(ss/n-m*m,0)):0; return [m, sd>1e-9?sd:null]; });
+  for (const it of items){ const z = new Float64Array(K);
+    AN_FEATS.forEach((f,i)=>{ const x = it.v[f.k], s = st[f.z==='all'?'all':it.y]?.[i]; z[i] = x==null || !s || !s[1] ? NaN : (x-s[0])/s[1]; });
+    it.z = z; idx.set(it.g[0], it); }
+  return ANP = {items, idx, st}; }
+function anWeights(o){ const p = AN_PRESETS[o.preset] || AN_PRESETS.balanced, w = {...p.w};
+  if (o.market && o.preset!=='market') for (const k in AN_MARKET_ADD) w[k] = (w[k]||0) + AN_MARKET_ADD[k];
+  return AN_FEATS.map(f=> (o.off||[]).includes(f.dim) ? 0 : (w[f.k]||0)); }
+function anSim(d){ return 100*Math.exp(-d*d/2); }
+function anTier(s){ return s>=AN_EXC ? 'Excellent' : s>=AN_GOOD ? 'Good' : 'Weak'; }
+// nearest finished games played before this one. Never pads: anything under AN_MIN_SIM is left out.
+function anSearch(gid, o){ const P0 = anPool(), t = P0.idx.get(gid); if (!t) return {err:'nofp'};
+  const w = anWeights(o), used = [], missing = [];
+  w.forEach((wi,i)=>{ if (!wi) return; (isNaN(t.z[i]) ? missing : used).push(i); });
+  const tw = used.reduce((s,i)=>s+w[i],0); if (!tw) return {err:'nofeat', missing};
+  const out = []; let cmp = 0;
+  for (const c of P0.items){ const g = c.g; if (g[6]===null || g[1]>=t.g[1] || g[0]===gid) continue;
+    let s = 0, cw = 0; for (const i of used){ const zc = c.z[i]; if (zc!==zc) continue; const d = t.z[i]-zc; s += w[i]*d*d; cw += w[i]; }
+    if (cw < AN_MIN_COVER*tw) continue; cmp++;
+    const sim = anSim(Math.sqrt(s/cw)); if (sim >= AN_MIN_SIM) out.push({c, sim, cover: cw/tw}); }
+  out.sort((a,b)=>b.sim-a.sim);
+  return {t, w, used, missing, cmp, list: out.slice(0, AN_MAX), nAbove: out.length}; }
+function anOutcome(c){ const g = c.g, v = c.v, m = v.sg*(g[6]-g[7]), pts = g[6]+g[7], sp = v.kSpread, tot = v.kTot;
+  const ats = sp==null ? null : Math.sign(m-sp), ou = tot==null ? null : Math.sign(pts-tot), favA = sp==null||sp===0 ? null : sp>0;
+  return {m, pts, won: Math.sign(m), ats, ou, sp, tot, mPred: v.mPred,
+    favWon: favA==null ? null : (favA ? m>0 : m<0), favCov: favA==null||ats===0 ? null : (favA ? ats>0 : ats<0)}; }
+function anSummary(list){ const os = list.map(x=>anOutcome(x.c)), n = os.length;
+  const cnt = (f) => { let w=0,l=0,p=0; for (const o of os){ const r = f(o); if (r==null) continue; r>0?w++:r<0?l++:p++; } return {w,l,p,n:w+l}; };
+  const avg = (f) => { const xs = os.map(f).filter(x=>x!=null); return xs.length ? xs.reduce((s,x)=>s+x,0)/xs.length : null; };
+  const sims = list.map(x=>x.sim).sort((a,b)=>a-b), med = n ? sims[Math.floor((n-1)/2)] : null;
+  return {n, su: cnt(o=>o.won), ats: cnt(o=>o.ats), ou: cnt(o=>o.ou), favSu: cnt(o=>o.favWon==null?null:o.favWon?1:-1), favAts: cnt(o=>o.favCov==null?null:o.favCov?1:-1),
+    m: avg(o=>o.m), pts: avg(o=>o.pts), sp: avg(o=>o.sp), tot: avg(o=>o.tot), mPred: avg(o=>o.mPred), vsModel: avg(o=>o.mPred==null?null:o.m-o.mPred), vsLine: avg(o=>o.sp==null?null:o.m-o.sp), med,
+    quality: !n ? 'None' : n>=10 && med>=AN_EXC ? 'Excellent' : n>=5 && med>=AN_GOOD ? 'Good' : 'Weak'}; }
+
+// Teams Like These: one team's pregame snapshot against every earlier team snapshot (both sides of every game).
+const TL_FEATS = [  // [fingerprint column suffix, label, weight, z group, format]
+  ['r','Rating',3,'all',f1], ['sos','Schedule so far',.5,'all',f1], ['gp','FBS games played',.5,'all',x=>x.toFixed(0)],
+  ...AN_STATS.flatMap(([s,l,f])=>{ const w = {E:1.5,SR:1,EX:.5,RE:.75,PE:.75,HV:.25,FD:.25}[s];
+    return [[s+'_o',`Offense ${l}`,w,'season',f],[s+'_d',`Defense ${l} allowed`,w,'season',f]]; })];
+let TLP = null;
+function tlPool(){ if (TLP) return TLP; const items = [], acc = {all: TL_FEATS.map(()=>[0,0,0])};
+  for (const g of DATA.games){ const r = FPX && FPX.by.get(g[0]); if (!r) continue; const y = seasonOf(g[1]); acc[y] ||= TL_FEATS.map(()=>[0,0,0]);
+    for (const [side, id] of [['h',g[3]],['a',g[4]]]){ const x = TL_FEATS.map(([c])=>FPX.get(r, side+'_'+c));
+      x.forEach((v,i)=>{ if (v==null) return; const a = acc[TL_FEATS[i][3]==='all'?'all':y][i]; a[0]++; a[1]+=v; a[2]+=v*v; });
+      items.push({g, id, y, x}); } }
+  const st = {}; for (const k in acc) st[k] = acc[k].map(([n,s,ss])=>{ const m = n?s/n:0, sd = n>1?Math.sqrt(Math.max(ss/n-m*m,0)):0; return [m, sd>1e-9?sd:null]; });
+  const idx = new Map();
+  for (const it of items){ it.z = Float64Array.from(it.x, (v,i)=>{ const s = st[TL_FEATS[i][3]==='all'?'all':it.y][i]; return v==null||!s[1] ? NaN : (v-s[0])/s[1]; }); idx.set(it.g[0]+':'+it.id, it); }
+  return TLP = {items, idx}; }
+function tlSearch(gid, id, k=5){ const P0 = tlPool(), t = P0.idx.get(gid+':'+id); if (!t) return null;
+  const used = TL_FEATS.map((f,i)=>i).filter(i=>!isNaN(t.z[i])), tw = used.reduce((s,i)=>s+TL_FEATS[i][2],0), best = new Map();
+  for (const c of P0.items){ if (c.g[1]>=t.g[1] || (c.id===id && c.y===t.y)) continue;  // earlier snapshots only, never this team's own season
+    let s = 0, cw = 0; for (const i of used){ const zc = c.z[i]; if (zc!==zc) continue; const d = t.z[i]-zc, w = TL_FEATS[i][2]; s += w*d*d; cw += w; }
+    if (cw < AN_MIN_COVER*tw) continue; const sim = anSim(Math.sqrt(s/cw)); if (sim < AN_MIN_SIM) continue;
+    const key = c.id+':'+c.y, b = best.get(key); if (!b || sim > b.sim) best.set(key, {c, sim}); }  // one snapshot per team season
+  return {t, used, list: [...best.values()].sort((a,b)=>b.sim-a.sim).slice(0,k)}; }
+function tlRest(id, y, from){  // that team's record from the snapshot on, rest of that season (hindsight, by design)
+  const gs = teamGames(id).filter(g=>seasonOf(g[1])===y && g[1]>=from); let w=0,l=0;
+  for (const g of gs){ const m = g[3]===id ? g[6]-g[7] : g[7]-g[6]; m>0?w++:m<0&&l++; } return {w,l}; }
+
+let AN = {preset:'balanced', market:false, off:[], n:10, more:false};
+const simCls = s => s>=AN_EXC ? 'hg2' : s>=AN_GOOD ? 'hg1' : '';
+const recTxt = r => r.n||r.p ? `${r.w}-${r.l}${r.p?'-'+r.p:''}` : 'N/A';
+const recPct = r => r.n ? ` <span class="note">${Math.round(100*r.w/r.n)}%</span>` : '';
+function anWhy(t, c, w){  // Current vs Historical, every feature that was used, heaviest first
+  const rows = AN_FEATS.map((f,i)=>({f,i,w:w[i]})).filter(x=>x.w>0).sort((a,b)=>b.w-a.w);
+  return `<div class="tablebox"><table class="cmp anw"><thead><tr><th class="l">Pregame</th><th>This game</th><th>That game</th><th title="Difference in standard deviations">Gap</th></tr></thead><tbody>${
+    rows.map(({f,i})=>{ const a = t.v[f.k], b = c.v[f.k], dz = isNaN(t.z[i])||isNaN(c.z[i]) ? null : Math.abs(t.z[i]-c.z[i]);
+      return `<tr><td class="l">${esc(f.lab)}</td><td>${a==null?'<span class="na">N/A</span>':f.fmt(a)}</td><td>${b==null?'<span class="na">N/A</span>':f.fmt(b)}</td><td class="${dz==null?'':dz<.25?'anok':dz>1?'anbad':''}">${dz==null?'<span class="na">skipped</span>':dz.toFixed(2)+' sd'}</td></tr>`; }).join('')
+  }</tbody></table></div><p class="note">Stat rows are each matchup's expected value vs an FBS average team that week (offense rating plus the other side's defense rating, both from games before that week). Gap is in standard deviations within that season; under 0.25 is shaded as a close match. N/A features were left out of the comparison, never treated as zero.</p>`; }
+function anCard(x, t, w){ const c = x.c, g = c.g, v = c.v, o = anOutcome(c), A = v.A, B = v.B, aHome = g[3]===A;
+  const at = g[5] ? 'vs' : aHome ? 'vs' : '@', siteTxt = g[5] ? 'neutral' : aHome ? 'home' : 'away';
+  const aPts = aHome ? g[6] : g[7], bPts = aHome ? g[7] : g[6];
+  const res = `${o.won>0?'<span class="W">W</span>':o.won<0?'<span class="L">L</span>':'T'} ${aPts}-${bPts}`;
+  const badges = [o.favWon==null?null:`Fav ${o.favWon?'won':'lost'}`, o.favCov==null?(o.ats===0?'Push':null):`Fav ${o.favCov?'covered':'didn\'t cover'}`, o.ou==null?null:o.ou>0?'Over':o.ou<0?'Under':'Total push'].filter(Boolean);
+  return `<details class="anc"><summary>
+    <div class="anh"><span class="cell ${simCls(x.sim)}" title="${anTier(x.sim)} match">${x.sim.toFixed(0)}%</span>
+      <b>${esc(nm(A))}</b> <span class="note">${at}</span> <b>${esc(nm(B))}</b> <span class="note">${fmtDate(g[1])} · A ${siteTxt}</span></div>
+    <div class="anm"><span>Gap <b>${naTxt(v.gap,f1)}</b></span><span>Line A <b>${v.kSpread==null?'<span class="na">N/A</span>':spreadTxt(-v.kSpread)}</b></span><span>Total <b>${naTxt(v.kTot,x=>x.toFixed(1))}</b></span><span>Model A <b>${naTxt(v.mPred,f1)}</b></span>
+      <span>Final <b>${res}</b></span>${badges.map(b=>`<span class="anb">${b}</span>`).join('')}</div>
+    <div class="note anwhy">Why this matches ›</div></summary>
+    ${anWhy(t, c, w)}<p style="margin:6px 0 0"><span class="tmlink glink" data-gid="${g[0]}" tabindex="0" role="link">Open this game ›</span>${x.cover<1?` <span class="note">Compared on ${Math.round(x.cover*100)}% of the feature weight, the rest was missing for that game.</span>`:''}</p></details>`; }
+function gvAnalogs(v){
+  if (!FPX) return `<div class="panel"><p class="note">This build has no pregame fingerprints. Rebuild with the current pipeline to get Games Like This.</p></div>`;
+  const res = anSearch(v.gid, AN), p = AN_PRESETS[AN.preset];
+  const ctl = `<div class="seg" role="group" aria-label="Match on">${Object.entries(AN_PRESETS).map(([k,x])=>`<button data-anp="${k}" aria-pressed="${AN.preset===k}">${x.lab}</button>`).join('')}</div>
+    <div class="chips" style="margin-top:8px">${AN.preset==='market'?'':`<button class="chip" data-anm="1" aria-pressed="${AN.market}">+ Market line and total</button>`}
+      ${[10,25,50].map(n=>`<button class="chip" data-ann="${n}" aria-pressed="${AN.n===n}">Up to ${n}</button>`).join('')}</div>
+    <details class="anadv"><summary class="note">Advanced: dimensions${AN.off.length?` (${AN.off.length} off)`:''}</summary><div class="chips" style="margin-top:6px">${AN_DIMS.map(([k,l])=>`<label class="chk"><input type="checkbox" data-and="${k}" ${AN.off.includes(k)?'':'checked'}> ${l}</label>`).join('')}</div>
+      <p class="note">Weights for this preset: ${anWeights(AN).map((w,i)=>w?`${esc(AN_FEATS[i].lab)} ${w}`:null).filter(Boolean).join(' · ')}</p></details>
+    <p class="note" style="margin:6px 0 0">${esc(p.note)}</p>`;
+  if (res.err==='nofp') return `<div class="panel">${ctl}<p class="note">No pregame fingerprint for this game (the first week of 2004 has no prior season to start from).</p></div>`;
+  if (res.err==='nofeat') return `<div class="panel">${ctl}<p class="note">This game is missing every feature this preset uses (${res.missing.map(i=>esc(AN_FEATS[i].lab)).join(', ')}). ${AN.preset==='market'?'There is no posted line yet.':''}</p></div>`;
+  const list = res.list.slice(0, AN.n), S = anSummary(list), t = res.t, w = res.w;
+  const shown = AN.more ? list : list.slice(0, 5);
+  const qcls = {Excellent:'hg2', Good:'hg1', Weak:'', None:'na'}[S.quality];
+  const sum = S.n ? `<div class="kgrid ansum">
+      <div><div class="k">Analog quality <span class="src d">DERIVED</span></div><b><span class="cell ${qcls}">${S.quality}</span></b><div class="s">${S.n} game${S.n===1?'':'s'}, median match ${S.med.toFixed(0)}%</div></div>
+      <div><div class="k">A-like side, straight up <span class="src h">HIST</span></div><b>${recTxt(S.su)}</b><div class="s">avg margin ${naTxt(S.m,f1)}</div></div>
+      <div><div class="k">A-like side, ATS <span class="src h">HIST</span></div><b>${recTxt(S.ats)}${recPct(S.ats)}</b><div class="s">${S.ats.n?`avg line A ${spreadTxt(-S.sp)}, vs line ${f1(S.vsLine)}`:'no lined analogs'}</div></div>
+      <div><div class="k">Favorite <span class="src h">HIST</span></div><b>${recTxt(S.favSu)} SU</b><div class="s">${recTxt(S.favAts)} ATS</div></div>
+      <div><div class="k">Totals <span class="src h">HIST</span></div><b>${recTxt(S.ou)} O/U</b><div class="s">avg ${naTxt(S.pts,x=>x.toFixed(1))} pts${S.tot!=null?`, avg total ${S.tot.toFixed(1)}`:''}</div></div>
+      <div><div class="k">Vs model <span class="src d">DERIVED</span></div><b>${naTxt(S.vsModel,f1)}</b><div class="s">A-like margin minus its pregame projection (${naTxt(S.mPred,f1)})</div></div>
+    </div>
+    <p class="note">What happened in these games, described, not predicted. Checked: ${AN_BT.txt} ${S.n<20?`With ${S.n} games, a record like this is mostly noise: `:''}a ${S.ats.n||S.n} game sample's 95% range on a 50% coin is about ±${Math.round(98/Math.sqrt(Math.max(S.ats.n||S.n,1)))} points of win rate. Team A is the side the model favored before kickoff, ${esc(nm(t.v.A))} here.</p>` : '';
+  const none = !S.n ? `<p class="note" style="margin-top:10px"><b>No close matches.</b> None of the ${res.cmp.toLocaleString()} earlier games compared reached ${AN_MIN_SIM}% similarity on these features, so nothing is shown rather than padding the list with poor matches. Try another preset or turn off a dimension.</p>` : '';
+  const miss = res.missing.length ? `<p class="note">Left out because this game doesn't have them: ${res.missing.map(i=>esc(AN_FEATS[i].lab)).join(', ')}.</p>` : '';
+  return `<div class="panel">${ctl}${sum}${none}${miss}
+    <div class="anlist">${shown.map(x=>anCard(x, t, w)).join('')}</div>
+    ${list.length>5?`<button class="chip" data-anmore="1" type="button" style="margin-top:8px">${AN.more?'Show fewer':`Show all ${list.length}`}</button>`:''}
+    <p class="note" style="margin-top:8px">${res.cmp.toLocaleString()} finished games before ${fmtDate(v.date)} had enough data to compare; ${res.nAbove.toLocaleString()} reached ${AN_MIN_SIM}%. Similarity is 100 × e^(−d²/2), d = weighted root mean square gap in standard deviations. ${AN_EXC}%+ Excellent, ${AN_GOOD}%+ Good, under ${AN_MIN_SIM}% dropped.</p></div>`;
+}
+function gvTeamsLike(v){ if (!FPX) return '';
+  const side = id => { const r = tlSearch(v.gid, id); if (!r) return `<div class="panel"><b>${esc(nm(id))}</b><p class="note">No pregame snapshot for this game.</p></div>`;
+    const rows = r.list.map(x=>{ const c = x.c, rest = tlRest(c.id, c.y, c.g[1]), fr = FINALRANK[c.y] ? FINALRANK[c.y].get(c.id) : null, live = c.y===SEASONS[SEASONS.length-1];
+      return `<tr><td class="l">${teamLinkHtml(c.id, esc(nm(c.id)))} <span class="note">${c.y}, before ${fmtDate(c.g[1],true)}</span></td><td><span class="cell ${simCls(x.sim)}">${x.sim.toFixed(0)}%</span></td><td>${naTxt(c.x[0],f1)}</td><td>${rest.w}-${rest.l}${live?' so far':''}</td><td>${fr?'#'+fr:'<span class="na">N/A</span>'}${live?' <span class="note">now</span>':''}</td></tr>`; }).join('');
+    return `<div class="panel"><b>${esc(nm(id))}</b> <span class="note">rating ${naTxt(r.t.x[0],f1)} going in</span>
+      ${r.list.length ? `<div class="tablebox"><table class="cmp tlt"><thead><tr><th class="l">Team, season</th><th>Match</th><th>Rating then</th><th title="From that game to the end of that season">Rest of season</th><th title="End of season T-Rank">Final rank</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="note">No earlier team snapshot reached ${AN_MIN_SIM}%.</p>`}</div>`; };
+  return `<div class="chartrow">${side(v.a)}${side(v.h)}</div><p class="note">Each team's pregame profile (rating, schedule, games played, and offense and defense in EPA, success rate, explosiveness, rush, pass, havoc and finishing) against every earlier team going into a game, best snapshot per team season, never the same team's own season. Rest of season and final rank happened later, so they are <span class="src h">HIST</span> hindsight, shown for context.</p>`; }
+// the model's pregame margin in plain words, from the same pregame snapshot the analogs use
+function gvWhy(v){ const P0 = FPX && anPool(), t = P0 && P0.idx.get(v.gid); if (!t) return '';
+  const A = t.v.A, B = t.v.B, hf = t.v.site*P.hfa, parts = [];
+  parts.push(`Rating gap <b>${esc(ab(A))} ${f1(t.v.gap)}</b> (${f1(t.v.rA)} vs ${f1(t.v.rB)} points better than an average team)`);
+  const hfTxt = !t.v.site ? '' : t.v.site>0 ? ` + home field <b>${esc(ab(A))} ${P.hfa.toFixed(1)}</b>` : ` − home field <b>${esc(ab(B))} ${P.hfa.toFixed(1)}</b>`;
+  const edges = AN_STATS.flatMap(([s,l],j)=>['a','b'].map(sd=>{ const i = AN_FEATS.findIndex(f=>f.k===s+sd), z = t.z[i]; if (isNaN(z)) return null;
+    const good = s==='HV' ? -z : z, who = sd==='a' ? A : B, them = sd==='a' ? B : A;  // havoc on your own snaps is bad for you
+    return {z, good, txt:`${esc(ab(who))} offense vs ${esc(ab(them))} defense, ${l} ${AN_FEATS[i].fmt(t.v[s+sd])} vs average`, who: good>0?who:them, pctl: normCdf(Math.abs(z))}; })).filter(Boolean)
+    .sort((x,y)=>Math.abs(y.z)-Math.abs(x.z)).slice(0,3);
+  const ing = !v.done && GV.range==='season' ? whyMargin(v) : null;
+  return `<p style="margin:0"><b>Model ${esc(ab(A))} ${f1(t.v.mPred??(t.v.gap+hf))}</b> = ${parts.join('')}${hfTxt}.</p>
+    ${ing?`<p class="note" style="margin:4px 0 0">By ingredient (current ratings): ${ing}.</p>`:''}
+    <ul class="anul">${edges.map(e=>`<li>${e.txt}: <b>favors ${esc(ab(e.who))}</b>, more extreme than ${Math.round(e.pctl*100)}% of matchups that season</li>`).join('')}</ul>`; }
+// does everything point the same way? Deterministic rules, stated on the page. Not a probability.
+function gvSignal(v){ if (v.spreadEdge==null || Math.abs(v.spreadEdge)<1) return {lbl: v.spreadEdge==null?'N/A':'No lean', cls:'na', why:[v.spreadEdge==null?'No model or market spread to compare.':'Model and market are within a point.']};
+  const side = v.spreadEdge>0 ? v.h : v.a, why = [], sc = [];
+  const size = Math.abs(v.spreadEdge); why.push(`Model likes ${esc(ab(side))} by ${size.toFixed(1)} more than the market${size>=3?' (3+ points)':''}.`);
+  const b = ebFor('spread', v.spreadEdge).test, p = b.n ? b.w/b.n : null;
+  if (p!=null && b.n>=100){ const s = p>0.524 ? 1 : p<0.5 ? -1 : 0; sc.push(s); why.push(`Edges this size went ${(p*100).toFixed(1)}% for the model side in ${b.n} test games (2025+): ${s>0?'supports':s<0?'against':'neutral'}.`); }
+  else why.push('Too few test games at this edge size to count.');
+  const r = anSearch(v.gid, {preset:'balanced', market:false, off:[], n:25});
+  if (r.list && r.list.length){ const S = anSummary(r.list.slice(0,25)), aSide = r.t.v.A===side;
+    if (S.ats.n>=10 && S.quality!=='Weak'){ const q = aSide ? S.ats.w/S.ats.n : S.ats.l/S.ats.n;
+      why.push(`Balanced analogs (${S.quality.toLowerCase()}, ${S.ats.n} lined): the ${esc(ab(side))}-like side covered ${Math.round(q*100)}%. Not counted: ${AN_BT.txt}`); }
+    else why.push('Analogs too few or too weak to describe.'); }
+  const op = (DATA.lineopen||{})[v.gid];
+  if (!v.done && op!=null && v.spread!=null && Math.abs(v.spread-op)>=1){ const toward = (v.spread-op)>0 ? v.h : v.a, s = toward===side ? 1 : -1; sc.push(s);
+    why.push(`Line moved ${Math.abs(v.spread-op).toFixed(1)} toward ${esc(ab(toward))} since it opened: ${s>0?'supports':'against'}.`); }
+  const pos = sc.filter(x=>x>0).length, neg = sc.filter(x=>x<0).length;
+  const lbl = pos && neg ? 'Conflicted' : size>=3 && pos>=2 ? 'Strong' : pos>=1 ? 'Moderate' : neg ? 'Conflicted' : 'Weak';
+  return {lbl, side, cls: {Strong:'hg2', Moderate:'hg1', Weak:'na', Conflicted:'hr1'}[lbl], why}; }
+function gvCoverage(v){ const g = v.g, y = seasonOf(v.date), t = FPX && anPool().idx.get(v.gid), cov = DATA.coverage[y];
+  const it = (ok, txt) => `<span class="covi ${ok?'ok':'no'}">${ok?'✓':'—'} ${txt}</span>`;
+  const gpa = t ? t.v.gpA : null, gpb = t ? t.v.gpB : null;  // gpA/gpB are the A and B sides
+  const used = t ? AN_FEATS.filter((f,i)=>!isNaN(t.z[i])).length : 0;
+  return `<div class="cov">${it(cov>=0.95, `${y} play by play ${cov!=null?Math.round(cov*100)+'%':'N/A'} of FBS games`)}
+    ${it(gpa!=null&&gpb!=null&&Math.min(gpa,gpb)>=3, t?`FBS games so far: ${esc(ab(t.v.A))} ${gpa}, ${esc(ab(t.v.B))} ${gpb}${Math.min(gpa,gpb)===0?' (preseason prior only)':''}`:'games played N/A')}
+    ${it(v.spread!=null, v.spread!=null?'Spread':'No spread')}${it(v.total!=null, v.total!=null?'Total':'No total')}${it(v.mlH!=null||v.kh!=null, v.mlH!=null?'Moneyline':v.kh!=null?'Kalshi price':'No moneyline')}
+    ${it(!!t, t?`Fingerprint ${used} of ${AN_FEATS.length} features`:'No fingerprint')}</div>`; }
+
 // ---------- Game Research view ----------
 let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
 function gvRangeSet(kind){
@@ -1605,6 +1853,7 @@ function renderGame(){
       ${key('Model win','m', v.pModelH==null?'<span class="na">N/A</span>':`${esc(ab(v.pModelH>=0.5?h:a))} ${(Math.max(v.pModelH,1-v.pModelH)*100).toFixed(1)}%`, mkPct==null?'no market price':`market ${esc(ab(mkPct>=0.5?h:a))} ${(Math.max(mkPct,1-mkPct)*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`)}
     </div>
     <p class="note" style="margin:8px 0 0">${esc(cS.txt)} ${esc(cT.txt)}</p>
+    ${gvCoverage(v)}
     <div class="chips" style="margin-top:10px"><button class="chip" id="gvMatch" type="button">Line history, situations, head to head ›</button><button class="chip" id="gvSave" type="button">${wlHas(v.gid)?'★ On watchlist':'+ Watchlist'}</button></div>
   </div>`;
 
@@ -1658,9 +1907,20 @@ function renderGame(){
     <p class="note">Season and home, away, favorite and underdog splits use ${seasonOf(v.date)} games with a closing line, before ${fmtDate(v.date)}. Records are wins-losses-pushes; colored only with 5+ games. Tap any record to see every game in it.</p>
     <div id="gvAudit"></div>`;
 
-  box.innerHTML = header + gvOutlier(v) + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
+  const sig = gvSignal(v);
+  const read = `<h3 class="sec">Why the model</h3><div class="panel">${gvWhy(v) || '<p class="note">No pregame snapshot for this game.</p>'}
+    <div class="betbar" style="margin-top:10px"><div><b>Signal agreement: <span class="cell ${sig.cls}">${sig.lbl}</span></b>${sig.side?` <span class="note">for the model's spread side, ${esc(ab(sig.side))}</span>`:''}</div></div>
+    <ul class="anul">${sig.why.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <p class="note">Checks counted: the edge size's 2025+ record and line movement since open. Strong: a 3+ point disagreement with both supporting. Moderate: one supporting, none against. Conflicted: a check against. Weak: nothing supporting. Analogs are shown but not counted, because their cover rates have not predicted covers. This counts agreement between inputs; none of them has beaten closing lines out of sample, so it is not a probability or a pick.</p></div>`;
+  box.innerHTML = header + gvOutlier(v) + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
 }
 $('gv').addEventListener('click', e=>{
+  const ap = e.target.closest('[data-anp]'); if (ap){ AN.preset = ap.dataset.anp; AN.more = false; renderGame(); return; }
+  if (e.target.closest('[data-anm]')){ AN.market = !AN.market; renderGame(); return; }
+  const an = e.target.closest('[data-ann]'); if (an){ AN.n = +an.dataset.ann; renderGame(); return; }
+  if (e.target.closest('[data-anmore]')){ AN.more = !AN.more; renderGame(); return; }
+  const ad = e.target.closest('[data-and]'); if (ad){ const k = ad.dataset.and; AN.off = ad.checked ? AN.off.filter(x=>x!==k) : [...AN.off, k]; renderGame();
+    const d = $('gv').querySelector('.anadv'); if (d) d.open = true; return; }
   const m = e.target.closest('[data-gvm]'); if (m){ GV.mk = m.dataset.gvm; renderGame(); return; }
   const q = e.target.closest('[data-gvg]'); if (q){ GV.rg = q.dataset.gvg; renderGame(); return; }
   const tt = e.target.closest('[data-gvt]'); if (tt){ GV.tt = +tt.dataset.gvt; renderGame(); return; }
@@ -2059,7 +2319,7 @@ function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
   goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
 function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
-  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
+  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; AN.more = false; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');

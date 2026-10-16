@@ -6,7 +6,7 @@ from model import walk
 YEARS=list(range(2008,2027))
 SHRINKS=(0.9,)
 HALFLIVES=(None,)
-def job(a): y,sh,hl=a; df=walk(y,sh,hl); df['shrink']=sh; df['hl']=hl or 0; return df
+def job(a): y,sh,hl=a; df=walk(y,sh,hl,snap=True); df['shrink']=sh; df['hl']=hl or 0; return df
 if __name__=='__main__':
     cfgs=[(y,sh,hl) for sh in SHRINKS for hl in HALFLIVES for y in YEARS]
     # model selection grid; the shipped model only needs shrink 0.9, no decay

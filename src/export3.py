@@ -1,7 +1,7 @@
 import sys, json, pickle; sys.path.insert(0,'.')
 from paths import DATA_DIR
 import numpy as np, pandas as pd
-from model import D, R, FEATS, LAMS, ridge, final_prior
+from model import D, R, FEATS, LAMS, ridge, final_prior, snapshot, FP_FEATS
 site = json.load(open(DATA_DIR + '/site_data.json'))
 B = site['params']['beta']; H = site['params']['hfa']; MF = ['NT','SR','PTS']
 pre = pd.read_pickle(DATA_DIR + '/pregame.pkl').set_index('gid')
@@ -47,6 +47,49 @@ for g in up.itertuples():
     hi, ai = int(g.home_id), int(g.away_id)
     if int(g.game_id) in done or hi not in pt or ai not in pt: continue
     site['ptot'][str(int(g.game_id))] = round(float(2*pmu + pt[hi][0] + pt[ai][1] + pt[ai][0] + pt[hi][1]), 1)
+# matchup fingerprints: each side's pregame team snapshot, for Games Like This on the page.
+# Past games come from the walk forward (only games before that week); upcoming games from every 2026
+# game so far, which is what the walk forward would use for them. Values are deviations from that
+# fit's league average, stored as scaled integers to keep the page small; null = not available.
+FP_STATS = ["E", "SR", "EX", "PE", "RE", "HV", "FD", "PTS"]
+FP_SCALE = {"r": 10, "gp": 1, "sos": 10, "E": 1000, "SR": 10000, "EX": 1000, "PE": 1000, "RE": 1000, "HV": 10000, "FD": 100, "PTS": 10}
+fp_cols, fp_scale = [], []
+for side in ("h", "a"):
+    for c in ["r", "gp", "sos"] + [f"{f}_{od}" for f in FP_STATS for od in ("o", "d")]:
+        fp_cols.append(f"{side}_{c}"); fp_scale.append(FP_SCALE[c.split("_")[0]])
+def fp_side(get):  # get(feature, 'o'|'d'), gp, sos components -> one side's scaled ints
+    q = lambda v, k: None if v is None or not np.isfinite(v) else int(round(v * FP_SCALE[k]))
+    r_ = sum(B[f] * (get(f, "o") - get(f, "d")) for f in MF)
+    sos = get("sos", None)
+    out = [q(r_, "r"), get("gp", None), q(None if sos is None else sum(B[f] * v for f, v in zip(MF, sos)), "sos")]
+    for f in FP_STATS:
+        out += [q(get(f, "o"), f), q(get(f, "d"), f)]
+    return out
+fp_rows = []
+if "h_E_o" in pre.columns:
+    for gid, p in pre.iterrows():
+        row = [int(gid)]
+        for side in ("h", "a"):
+            def get(f, od, p=p, side=side):
+                if f == "gp": return int(p[f"{side}_gp"])
+                if f == "sos":
+                    v = [p[f"{side}_sos_{x}"] for x in MF]
+                    return None if any(pd.isna(x) for x in v) else v
+                return float(p[f"{side}_{f}_{od}"])
+            row += fp_side(get)
+        fp_rows.append(row)
+    pri_fp = final_prior(y, ids, 0.9, FP_FEATS)
+    sn = snapshot(r, ids, pri, pri_fp)
+    for g in up.itertuples():
+        gid, hi, ai = int(g.game_id), int(g.home_id), int(g.away_id)
+        if gid in done or hi not in sn or ai not in sn: continue
+        row = [gid]
+        for t in (hi, ai):
+            s_ = sn[t]
+            row += fp_side(lambda f, od, s_=s_: s_["gp"] if f == "gp" else s_["sos"] if f == "sos" else s_[f][0 if od == "o" else 1])
+        fp_rows.append(row)
+site['fp'] = {"cols": fp_cols, "scale": fp_scale, "rows": fp_rows}
+print('fingerprints', len(fp_rows))
 games.sort(key=lambda x: (x[1], x[2] == '', pd.to_datetime(x[2], format='%I:%M %p').time() if x[2] else 0))
 site['games'] = games; site['asof'] = pd.Timestamp.now(tz='America/New_York').strftime('%Y-%m-%d')
 json.dump(site, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
