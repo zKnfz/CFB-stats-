@@ -47,7 +47,29 @@ def fetch_markets(series="KXNCAAFGAME"):
             break
     return [m for m in all_markets if m["status"] == "active"]
 
+def probe():
+    """What do Kalshi's college spread and total markets look like? Logs a few, changes nothing."""
+    for series in PROBE_SERIES:  # what do Kalshi's college spread and total markets look like? (log only)
+        ms = None
+        for wait in (0, 15):  # Kalshi rate limits bursts (HTTP 429); this runs first, before the winner markets
+            time.sleep(wait)
+            try:
+                ms = fetch_markets(series); break
+            except Exception as e:
+                print(f"probe {series} failed:", e)
+        try:
+            if ms is None:
+                continue
+            print(f"probe {series}: {len(ms)} active markets")
+            for m in ms[:3]:
+                print("  ", {k: m.get(k) for k in ("ticker", "event_ticker", "title", "subtitle", "yes_sub_title", "no_sub_title",
+                                                  "floor_strike", "cap_strike", "strike_type", "yes_bid_dollars", "yes_ask_dollars", "volume_24h_fp")})
+        except Exception as e:
+            print(f"probe {series} print failed:", e)
+
+
 def main():
+    probe()
     site = json.load(open(DATA_DIR + '/site_data.json'))
     site['games'] = [g[:11] for g in site['games']]  # idempotent: drop any kalshi fields from a prior run
     site['kbuy'] = {}
@@ -59,11 +81,15 @@ def main():
         n = ALIASES.get(norm(kalshi_name), norm(kalshi_name))
         return norm_to_our.get(n)
 
-    try:
-        active = fetch_markets()
-    except Exception as e:
-        print("Kalshi fetch failed, leaving games unmatched:", e)
-        active = []
+    active = []
+    for wait in (5, 20, 45):  # the probe just ran; Kalshi answers bursts with HTTP 429, so pause and retry
+        time.sleep(wait)
+        try:
+            active = fetch_markets(); break
+        except Exception as e:
+            print("Kalshi fetch failed:", e)
+    if not active:
+        print("Kalshi fetch gave nothing, leaving games unmatched")
 
     by_event = defaultdict(list)
     for m in active:
@@ -148,23 +174,6 @@ def main():
             g.append(None)
 
     print(f"{len(active)} active Kalshi markets, {matched} matched to upcoming games")
-    for series in PROBE_SERIES:  # what do Kalshi's college spread and total markets look like? (log only)
-        ms = None
-        for wait in (3, 10):  # Kalshi rate limits bursts (HTTP 429), so pause before each try
-            time.sleep(wait)
-            try:
-                ms = fetch_markets(series); break
-            except Exception as e:
-                print(f"probe {series} failed:", e)
-        try:
-            if ms is None:
-                continue
-            print(f"probe {series}: {len(ms)} active markets")
-            for m in ms[:3]:
-                print("  ", {k: m.get(k) for k in ("ticker", "event_ticker", "title", "subtitle", "yes_sub_title", "no_sub_title",
-                                                  "floor_strike", "cap_strike", "strike_type", "yes_bid_dollars", "yes_ask_dollars", "volume_24h_fp")})
-        except Exception as e:
-            print(f"probe {series} print failed:", e)
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 if __name__ == "__main__":
