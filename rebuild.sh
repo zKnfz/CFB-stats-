@@ -9,6 +9,7 @@ python3 pregame.py
 python3 export2.py
 python3 export3.py
 python3 qb.py
+python3 players.py
 python3 lines.py      # needs CFBD_API_KEY, skips gracefully if not
 python3 kalshi.py
 python3 track.py

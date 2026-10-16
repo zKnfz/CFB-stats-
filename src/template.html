@@ -203,6 +203,11 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .cov{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.covi{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:2px 7px}
 .vso tr.now td{background:var(--accent-soft)}.vso{width:100%}.vso td.l{white-space:normal;min-width:7.5em}
 @media (max-width:560px){.vso{font-size:11.5px}.vso td,.vso th{padding:6px 2px}.vso td.l{min-width:6.5em}.vso .src{display:none}.vso tr.now td.l b::after{content:' •'}}
+.pplist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:10px}
+.ppr{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;font:13px var(--data);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 9px;cursor:pointer}
+.ppr[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.ppr span{font-size:12px;color:var(--muted)}
+.ppsel{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.ppline{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:8px 0}
+.ppline input{font:600 15px var(--data);padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink)}
 .covi.ok{color:var(--good)}.covi.qbw{color:var(--bad);border-color:var(--bad)}.covi.no{color:var(--muted);border-style:dashed}
 #gv .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 #gv .seg button{font:600 13px var(--data);background:var(--panel);color:var(--muted);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer;min-height:36px}
@@ -1783,6 +1788,73 @@ function vsoAudit(id, i){ const g = DATA.games.find(x=>x[0]===GV.gid), v = gameV
       <td class="${x.cover>0?'W':x.cover<0?'L':''}">${x.cover==null?'':x.cover>0?'Cover':x.cover<0?'Miss':'Push'}</td><td>${x.tot==null?'<span class="na">N/A</span>':`${x.ou>0?'O':x.ou<0?'U':'P'} ${x.tot}`}</td></tr>`).join('')
   }</tbody></table></div><p class="note">Rank shown is that opponent's end of season T-Rank.</p></div>`; }
 
+// ---------- player props (Outlier style): a player's games against a line you set ----------
+// players.py builds every passer, rusher and receiver's game lines for this season and last. There are no sportsbook
+// prop lines in the data, so the line defaults to the player's median this season and can be typed over.
+const PM = [  // market key, label, value from a log row, which rows count (the player had a role in that part of the game)
+  ['pyd','Pass yds', r=>r[8], r=>r[6]>0], ['cmp','Completions', r=>r[7], r=>r[6]>0], ['ptd','Pass TDs', r=>r[9], r=>r[6]>0],
+  ['ryd','Rush yds', r=>r[12], r=>r[11]>0], ['ra','Rush att', r=>r[11], r=>r[11]>0],
+  ['wyd','Rec yds', r=>r[15], r=>(r[17]??r[14])>0], ['rec','Receptions', r=>r[14], r=>(r[17]??r[14])>0],
+  ['rr','Rush + rec yds', r=>r[12]+r[15], r=>r[11]+(r[17]??r[14])>0], ['td','Rush + rec TDs', r=>r[13]+r[16], r=>r[11]+(r[17]??r[14])>0]];
+let PLX = null;
+function plIdx(){ if (PLX) return PLX; const by = new Map(), allowed = new Map();
+  for (const r of DATA.plog||[]){ if (!by.has(r[0])) by.set(r[0], []); by.get(r[0]).push(r); }
+  return PLX = {by}; }
+const pmOf = k => PM.find(m=>m[0]===k) || PM[0];
+function plGames(pid, mk, before){ const m = pmOf(mk); return (plIdx().by.get(pid)||[]).filter(r=>r[2]<before && m[3](r)); }
+function plMedian(xs){ if (!xs.length) return null; const s = [...xs].sort((a,b)=>a-b), k = s.length>>1; return s.length%2 ? s[k] : (s[k-1]+s[k])/2; }
+function plDefault(pid, mk, before){ const y = seasonOf(before), gs = plGames(pid, mk, before), cur = gs.filter(r=>seasonOf(r[2])===y), use = cur.length>=3 ? cur : gs.slice(-10);
+  const md = plMedian(use.map(pmOf(mk)[2])); return md==null ? 0.5 : Math.floor(md)+0.5; }
+// what tonight's opponent has allowed per game this season in this market, and where that ranks among FBS defenses
+function plAllowed(opp, mk, before){ const y = seasonOf(before), m = pmOf(mk), per = new Map();
+  for (const r of DATA.plog||[]){ if (r[2]>=before || seasonOf(r[2])!==y || !DATA.teams[r[4]]) continue; const k = r[4]+':'+r[1];
+    per.set(k, (per.get(k)||0) + (mk==='td'||mk==='rr'||mk==='rec'||mk==='wyd' ? m[2](r) : (m[3](r) ? m[2](r) : 0))); }
+  const tot = new Map(); for (const [k,v] of per){ const t = +k.split(':')[0], e = tot.get(t)||[0,0]; e[0]+=v; e[1]++; tot.set(t, e); }
+  const fbs = current ? new Set(current.teams.map(t=>t.id)) : null, avg = [...tot].filter(([t,[s,n]])=>n>=2 && (!fbs || fbs.has(t))).map(([t,[s,n]])=>[t, s/n]).sort((a,b)=>a[1]-b[1]);
+  const i = avg.findIndex(x=>x[0]===opp); return i<0 ? null : {avg: avg[i][1], rk: i+1, n: avg.length}; }
+let PP = {team:null, mk:'pyd', pid:null, line:null, over:true, rg:'L10'};
+function gvProps(v){
+  if (!DATA.plog || !DATA.plog.length) return '';
+  const team = PP.team===v.a || PP.team===v.h ? PP.team : v.a, opp = team===v.h ? v.a : v.h, m = pmOf(PP.mk), y = seasonOf(v.date);
+  // this team's players: latest team matches, with this season games in this market before tonight
+  const roster = Object.entries(DATA.players||{}).filter(([pid,[n,t]])=>t===team).map(([pid,[n]])=>{ const gs = plGames(pid, m[0], v.date), cur = gs.filter(r=>seasonOf(r[2])===y && r[3]===team), vals = cur.map(m[2]);
+    return {pid, name:n, gs, n: cur.length, avg: vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null, l5: cur.slice(-5).map(m[2])}; })
+    .filter(x=>x.n>=2).sort((a,b)=>b.avg-a.avg).slice(0, 8);
+  if (!roster.some(x=>x.pid===PP.pid)){ PP.pid = roster.length ? roster[0].pid : null; PP.line = null; }
+  const tchips = [v.a, v.h].map(id=>`<button data-ppt="${id}" aria-pressed="${id===team}">${esc(ab(id))}</button>`).join('');
+  const mchips = PM.map(([k,l])=>`<button class="chip" data-ppm="${k}" aria-pressed="${k===m[0]}">${l}</button>`).join('');
+  const list = roster.length ? `<div class="pplist">${roster.map(x=>`<button class="ppr" data-ppp="${x.pid}" aria-pressed="${x.pid===PP.pid}"><b>${esc(x.name)}</b><span>${x.avg.toFixed(1)} avg, ${x.n} g</span><span class="note">${x.l5.join(' · ')}</span></button>`).join('')}</div>`
+    : `<p class="note">No ${esc(ab(team))} player has 2+ games in this market this season.</p>`;
+  let body = '';
+  if (PP.pid){ const nm_ = (DATA.players[PP.pid]||['?'])[0];
+    if (PP.line==null) PP.line = plDefault(PP.pid, m[0], v.date);
+    const all = plGames(PP.pid, m[0], v.date), line = PP.line, sg = PP.over ? 1 : -1;
+    const pick = rg => rg[0]==='L' ? all.slice(-(+rg.slice(1))) : rg==='h2h' ? all.filter(r=>r[4]===opp) : all.filter(r=>seasonOf(r[2])===rg);
+    const smp = pick(PP.rg), hits = smp.map(r=>Math.sign(m[2](r)-line)*sg), k = hits.filter(h=>h>0).length, dec = hits.filter(h=>h!==0).length;
+    const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],[y,y],[String(+y-1),String(+y-1)],['h2h','H2H']];
+    const rate = rg => { const s = pick(rg), h = s.map(r=>Math.sign(m[2](r)-line)*sg).filter(x=>x!==0), w = h.filter(x=>x>0).length; return h.length ? {w, n:h.length} : null; };
+    const rates = ranges.map(([rg,l])=>{ const x = rate(rg); if (!x) return ''; const q = x.w/x.n; return `<span>${esc(l)}<b class="${x.n>=5&&q>=0.7?'hi':x.n>=5&&q<=0.3?'lo':''}">${x.n<5?x.w+'/'+x.n:Math.round(q*100)+'%'}</b></span>`; }).join('');
+    const items = smp.map((r,i)=>({lab: DATA.teams[r[4]] ? ab(r[4]) : 'FCS', sub: r[2].slice(5).replace('-','/'), val: m[2](r), hit: hits[i],
+      tip: `${fmtDate(r[2])} ${r[5]>0?'vs':r[5]<0?'at':'vs'} ${DATA.teams[r[4]]?nm(r[4]):'FCS opponent'}: ${m[1]} ${m[2](r)}${r[6]?`, ${r[7]}/${r[6]} passing ${r[8]} yds ${r[9]} TD ${r[10]} INT`:''}${r[11]?`, ${r[11]} rushes ${r[12]} yds ${r[13]} TD`:''}${r[17]??r[14]?`, ${r[14]} catches${r[17]!=null?` on ${r[17]} targets`:''} ${r[15]} yds ${r[16]} TD`:''}`}));
+    const avg = smp.length ? smp.reduce((t,r)=>t+m[2](r),0)/smp.length : null;
+    const al = plAllowed(opp, m[0], v.date), o = current && current.byId.get(opp);
+    const unit = ['pyd','cmp','ptd'].includes(m[0]) ? ['peD','pass defense, EPA per pass allowed'] : ['ryd','ra'].includes(m[0]) ? ['reD','run defense, EPA per rush allowed'] : ['peD','pass defense, EPA per pass allowed'];
+    body = `<div class="ppsel">
+      <div><b>${esc(nm_)}</b> <span class="note">${esc(ab(team))}, ${m[1]}</span></div>
+      <div class="ppline"><div class="seg" role="group" aria-label="Over or under"><button data-ppo="1" aria-pressed="${PP.over}">Over</button><button data-ppo="0" aria-pressed="${!PP.over}">Under</button></div>
+        <label class="note">Line <input id="ppLine" type="number" step="0.5" inputmode="decimal" value="${line}" style="width:5.5em"></label>
+        <span class="note">No sportsbook prop lines in the data: type the book's number. Starts at his median this season.</span></div>
+      <div class="seg" role="group" aria-label="Games">${ranges.map(([rg,l])=>`<button data-ppg="${rg}" aria-pressed="${PP.rg===rg}">${esc(l)}</button>`).join('')}</div>
+      <div class="hr"><b>${dec?`${k}/${dec}`:'N/A'}</b><span>${dec?`${Math.round(100*k/dec)}% · ${esc(nm_)} ${PP.over?'over':'under'} ${line} ${m[1].toLowerCase()}`:'no games in this range'}</span>${avg==null?'':`<span class="note">avg ${avg.toFixed(1)}</span>`}</div>
+      ${lineBars(items, line, `${nm_} ${m[1]} by game`)}
+      <div class="rates">${rates}</div>
+      <p class="note">${esc(ab(opp))} ${unit[1]}: ${o&&o[unit[0]+'Rk']?`<b>#${o[unit[0]+'Rk']}</b> of ${current.teams.length}`:'N/A'}${al?`. Allowed ${al.avg.toFixed(1)} ${m[1].toLowerCase()} per game to all players this season (#${al.rk} fewest of ${al.n} FBS teams)`:''}. Bars are every game before ${fmtDate(v.date)} where he had a pass, rush or target in this market (a game where he never touched the ball or saw a target isn't in play by play), against the line above. Green cleared, red missed. Player hit rates on a line you pick have the same problem as team trends: a streak alone has not been a reason to bet, books set prop lines with this history in hand.</p></div>`; }
+  return `<div class="panel ox">
+    <div class="seg" role="group" aria-label="Team">${tchips}</div>
+    <div class="mk" role="group" aria-label="Market" style="margin-top:8px">${mchips}</div>
+    ${list}${body}</div>`;
+}
+
 // ---------- Game Research view ----------
 let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
 function gvRangeSet(kind){
@@ -1896,7 +1968,7 @@ function gvOutlier(v){
   if (mk.kind==='ml' && v.pModelH!=null){ const pm = team===v.h ? v.pModelH : 1-v.pModelH, pk = v.pMktH==null ? null : (team===v.h ? v.pMktH : 1-v.pMktH);
     model = `Model win ${(pm*100).toFixed(1)}%${pk==null?'':`, market ${(pk*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`}`; }
   const ttog = mk.kind==='ou' ? `<div class="seg" role="group" aria-label="Whose games">${[v.a,v.h].map(id=>`<button data-gvt="${id}" aria-pressed="${id===team}">${esc(ab(id))} games</button>`).join('')}</div> ` : '';
-  return `<div class="panel ox">
+  return `<div class="panel ox oxb">
     <div class="mk" role="group" aria-label="Bet">${mks.map(x=>`<button class="chip" data-gvm="${x.k}" aria-pressed="${x.k===mk.k}">${esc(x.label)} <span class="note">${esc(x.px)}</span></button>`).join('')}</div>
     ${ttog}<div class="seg" role="group" aria-label="Games">${ranges.map(([r,l])=>`<button data-gvg="${r}" aria-pressed="${GV.rg===r}">${esc(l)}</button>`).join('')}</div>
     <div class="hr"><b>${dec.length?`${k}/${dec.length}`:'N/A'}</b><span>${dec.length?`${Math.round(100*k/dec.length)}% · ${esc(what)}${smp.length-dec.length?` (${smp.length-dec.length} push)`:''}`:'no games in this range'}</span>
@@ -1998,9 +2070,14 @@ function renderGame(){
     <div class="betbar" style="margin-top:10px"><div><b>Signal agreement: <span class="cell ${sig.cls}">${sig.lbl}</span></b>${sig.side?` <span class="note">for the model's spread side, ${esc(ab(sig.side))}</span>`:''}</div></div>
     <ul class="anul">${sig.why.map(x=>`<li>${x}</li>`).join('')}</ul>
     <p class="note">Checks counted: the edge size's 2025+ record and line movement since open. Strong: a 3+ point disagreement with both supporting. Moderate: one supporting, none against. Conflicted: a check against. Weak: nothing supporting. Analogs are shown but not counted, because their cover rates have not predicted covers. This counts agreement between inputs; none of them has beaten closing lines out of sample, so it is not a probability or a pick.</p></div>`;
-  box.innerHTML = header + gvOutlier(v) + `<h3 class="sec">Vs opponents like this</h3>${gvVsOpp(v)}` + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
+  box.innerHTML = header + gvOutlier(v) + (DATA.plog && DATA.plog.length ? `<h3 class="sec">Player props</h3>${gvProps(v)}` : '') + `<h3 class="sec">Vs opponents like this</h3>${gvVsOpp(v)}` + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
 }
 $('gv').addEventListener('click', e=>{
+  const ppt = e.target.closest('[data-ppt]'); if (ppt){ PP.team = +ppt.dataset.ppt; PP.pid = null; PP.line = null; renderGame(); return; }
+  const ppm = e.target.closest('[data-ppm]'); if (ppm){ PP.mk = ppm.dataset.ppm; PP.line = null; renderGame(); return; }
+  const ppp = e.target.closest('[data-ppp]'); if (ppp){ PP.pid = ppp.dataset.ppp; PP.line = null; renderGame(); return; }
+  const ppo = e.target.closest('[data-ppo]'); if (ppo){ PP.over = ppo.dataset.ppo==='1'; renderGame(); return; }
+  const ppg = e.target.closest('[data-ppg]'); if (ppg){ PP.rg = ppg.dataset.ppg; renderGame(); return; }
   const vp = e.target.closest('[data-gvp]'); if (vp){ GV.vp = vp.dataset.gvp; renderGame(); return; }
   const vs = e.target.closest('[data-vso]'); if (vs){ const [id, i] = vs.dataset.vso.split('|').map(Number), box = $('vsoAud'+id); box.innerHTML = box.dataset.k===vs.dataset.vso ? '' : vsoAudit(id, i); box.dataset.k = box.innerHTML ? vs.dataset.vso : ''; return; }
   const ap = e.target.closest('[data-anp]'); if (ap){ AN.preset = ap.dataset.anp; AN.more = false; renderGame(); return; }
@@ -2018,6 +2095,7 @@ $('gv').addEventListener('click', e=>{
   if (e.target.id==='gvMatch'){ const g = DATA.games.find(x=>x[0]===GV.gid); openGameMatchup(g); return; }
   if (e.target.id==='gvSave') wlSaveGame(GV.gid);
 });
+$('gv').addEventListener('change', e=>{ if (e.target.id==='ppLine'){ const x = parseFloat(e.target.value); if (isFinite(x)){ PP.line = x; renderGame(); } } });
 $('gv').addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest('[data-aud],[data-vso]')) e.target.click(); });
 
 // ---------- Team Research view ----------
@@ -2441,7 +2519,7 @@ function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
   goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
 function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
-  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; AN.more = false; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
+  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; AN.more = false; PP.team = null; PP.pid = null; PP.line = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');
