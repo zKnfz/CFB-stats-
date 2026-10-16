@@ -50,6 +50,16 @@ nav.tabs button{flex:0 0 auto;white-space:nowrap}
 .strip{display:flex;gap:3px;margin:6px 0}
 .strip i{flex:1;height:6px;border-radius:2px;background:var(--line)}
 .strip i.w{background:var(--good)}.strip i.l{background:var(--bad)}
+.icard{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:10px;overflow:hidden}
+.icard .ih{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px 0;font-size:13px}
+.icard .ih b{display:flex;align-items:center;gap:6px}
+.icard .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.icard .it{padding:8px 12px 10px;font-size:16px;font-weight:600;line-height:1.35}
+.icard .ib{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line);font-family:var(--data);font-size:14px}
+.icard .ib .px{font-weight:700;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+.icard .strip{margin:0;gap:2px}.icard .strip i{height:4px;border-radius:0}
+.icard details{padding:8px 12px 10px;font-size:13px;color:var(--muted)}
+.icard summary{cursor:pointer;list-style:none}.icard summary::-webkit-details-marker{display:none}
 .verdict{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:4px}
 .verdict.noise{background:var(--line);color:var(--muted)}.verdict.real{background:var(--good-bg);color:var(--good)}
 
@@ -200,7 +210,17 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 
   <section id="p-feed" hidden>
     <div class="panel">
-      <div class="chips" id="fsort" role="group" aria-label="Sort trends">
+      <div class="chips" id="fview" role="group" aria-label="Feed view" style="margin-bottom:8px">
+        <button class="chip" data-view="ins" aria-pressed="true">Insights</button>
+        <button class="chip" data-view="picks" aria-pressed="false">Picks</button>
+      </div>
+      <div class="chips" id="fmkt" role="group" aria-label="Market">
+        <button class="chip" data-mkt="all" aria-pressed="true">All</button>
+        <button class="chip" data-mkt="ats" aria-pressed="false">Spread</button>
+        <button class="chip" data-mkt="ou" aria-pressed="false">Totals</button>
+        <button class="chip" data-mkt="su" aria-pressed="false">Moneyline</button>
+      </div>
+      <div class="chips" id="fsort" role="group" aria-label="Sort trends" hidden>
         <button class="chip" data-sort="ev" aria-pressed="true">Best value</button>
         <button class="chip" data-sort="trend" aria-pressed="false">Strongest trend</button>
         <button class="chip" data-sort="time" aria-pressed="false">Kickoff</button>
@@ -506,8 +526,25 @@ let muDate = null;  // date of the game opened from the Games tab; trends only u
 let muPred = null;  // that game's pregame pick from Team A's side, so past games don't use hindsight ratings
 let LINED = null;
 function linedGames(){ return LINED || (LINED = DATA.games.filter(g=>g[6]!==null && g[9]!==null)); }
+let TIDX = null;
+function teamGames(id){
+  if (!TIDX){ TIDX = new Map(); for (const g of DATA.games){ if (g[6]===null) continue;
+    for (const t of [g[3],g[4]]){ if (!TIDX.has(t)) TIDX.set(t,[]); TIDX.get(t).push(g); } } }
+  return TIDX.get(id) || [];
+}
+function teamTotLog(id, before){  // one team's games with a posted total; cover>0 means the over hit
+  const T = DATA.tot || {};
+  return teamGames(id).filter(g=>g[1]<before && T[g[0]]!=null).map(g=>{ const home=g[3]===id, pts=g[6]+g[7], t=T[g[0]];
+    return {date:g[1], opp: home?g[4]:g[3], home, neu:g[5], margin: pts, exp: t, cover: Math.sign(pts-t)}; })
+    .sort((x,y)=>x.date<y.date?-1:1);
+}
+function teamSuLog(id, before){
+  return teamGames(id).filter(g=>g[1]<before && g[6]!==g[7]).map(g=>{ const home=g[3]===id, m = home?g[6]-g[7]:g[7]-g[6];
+    return {date:g[1], opp: home?g[4]:g[3], home, neu:g[5], margin:m, exp:0, cover: Math.sign(m)}; })
+    .sort((x,y)=>x.date<y.date?-1:1);
+}
 function teamLog(id, before){  // one team's lined games, from that team's side
-  return linedGames().filter(g=>(g[3]===id||g[4]===id) && g[1]<before).map(g=>{
+  return teamGames(id).filter(g=>g[9]!==null && g[1]<before).map(g=>{
     const home = g[3]===id, margin = home ? g[6]-g[7] : g[7]-g[6], exp = home ? g[9] : -g[9];
     return {date:g[1], opp: home?g[4]:g[3], home, neu:g[5], margin, exp, us: home?g[6]:g[7], them: home?g[7]:g[6],
             cover: Math.sign(margin-exp)};
@@ -850,11 +887,18 @@ const L10 = (()=>{ const hist=new Map(), out=Array.from({length:11},()=>({c:0,n:
       if (h.length>=10){ const k=h.filter(Boolean).length; out[k].n++; if (cov) out[k].c++; }
       h.push(cov); if (h.length>10) h.shift(); hist.set(id,h); } }
   return out; })();
+const OU10 = (()=>{ const T=DATA.tot||{}, hist=new Map(), out=Array.from({length:11},()=>({c:0,n:0}));
+  const gs=DATA.games.filter(g=>g[6]!==null&&T[g[0]]!=null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:0);
+  for (const g of gs){ const r=g[6]+g[7]-T[g[0]]; if (!r) continue;
+    for (const id of [g[3],g[4]]){ const h=hist.get(id)||[];
+      if (h.length>=10){ const k=h.filter(Boolean).length; out[k].n++; if (r>0) out[k].c++; }
+      h.push(r>0); if (h.length>10) h.shift(); hist.set(id,h); } }
+  return out; })();
 const ev110 = p => p*(100/110) - (1-p);
 function impliedMargin(p){ let lo=-60, hi=60; for (let i=0;i<50;i++){ const m=(lo+hi)/2; normCdf(m/FIT.sd)<p ? lo=m : hi=m; } return (lo+hi)/2; }
 const kelly110 = p => Math.max(0, (p*(100/110) - (1-p)) / (100/110));
 const sgnPct = v => (v>=0?'+':'−')+Math.abs(v*100).toFixed(1)+'%';
-let fsort = 'ev', fdays = 7;
+let fsort = 'ev', fdays = 7, fview = 'ins', fmkt = 'all';
 
 function insightsFor(id, opp, g){  // candidate trends for one side, strongest first
   const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, isHome = id===h;
@@ -864,7 +908,7 @@ function insightsFor(id, opp, g){  // candidate trends for one side, strongest f
   const out = [];
   const add = (list, text, kind) => { const n=list.length; if (!n) return; const w=list.filter(x=>x.cover>0).length;
     const avg = list.reduce((t,x)=>t+x.margin-x.exp,0)/n;
-    out.push({id, text, kind, w, n, avg, list, z: Math.abs(w-n/2)/Math.sqrt(n/4)}); };
+    out.push({id, opp, gid, text, kind, mkt:'ats', w, n, avg, list, z: Math.abs(w-n/2)/Math.sqrt(n/4)}); };
   const l10 = log.slice(-10);
   if (l10.length===10){ const k=l10.filter(x=>x.cover>0).length;
     if (k>=7) add(l10, `${name} has covered in ${k} of its last 10 games`, 'l10');
@@ -877,10 +921,44 @@ function insightsFor(id, opp, g){  // candidate trends for one side, strongest f
   const st = log.filter(x=>x.date>=since2 && (neu ? x.neu : (isHome ? x.home&&!x.neu : !x.home&&!x.neu)));
   if (extreme(st,5)) { const w=st.filter(x=>x.cover>0).length; add(st, `${name} is ${w}-${st.length-w} against the spread ${neu?'at neutral sites':isHome?'at home':'on the road'} over the last two seasons`, 'site'); }
   const hh = log.filter(x=>x.opp===opp).slice(-6);
-  if (extreme(hh,3)) { const w=hh.filter(x=>x.cover>0).length; add(hh, `${name} has covered in ${w} of the last ${hh.length} meetings with ${nm(opp)}`, 'h2h'); }
+  if (id < opp && extreme(hh,3)) { const w=hh.filter(x=>x.cover>0).length; add(hh, `${name} has covered in ${w} of the last ${hh.length} meetings with ${nm(opp)}`, 'h2h'); }
   return out;
 }
+function ouInsightsFor(id, opp, g){
+  const [gid,date,tm,h,a,neu] = g, isHome = id===h, name = nm(id);
+  const log = teamTotLog(id, date).filter(x=>x.cover!==0), y=seasonOf(date), yi=SEASONS.indexOf(y);
+  const since2 = ALL.span[SEASONS[Math.max(0,yi-1)]][0], sinceY = ALL.span[y][0], out = [];
+  const add = (list, text, kind) => { const n=list.length; if (!n) return; const w=list.filter(x=>x.cover>0).length;
+    const avg = list.reduce((t,x)=>t+x.margin-x.exp,0)/n;
+    out.push({id, opp, gid, text, kind, mkt:'ou', w, n, avg, list, z: Math.abs(w-n/2)/Math.sqrt(n/4)}); };
+  const dirOf = l => l.filter(x=>x.cover>0).length*2 >= l.length ? 'over' : 'under';
+  const cnt = l => { const o=l.filter(x=>x.cover>0).length; return dirOf(l)==='over' ? [o,l.length-o] : [l.length-o,o]; };
+  const extreme = (l, min) => l.length>=min && Math.abs(l.filter(x=>x.cover>0).length/l.length-0.5)>=0.2;
+  const l10 = log.slice(-10);
+  if (l10.length===10 && extreme(l10,10) && Math.abs(l10.filter(x=>x.cover>0).length-5)>=2){
+    const [k] = cnt(l10); add(l10, `The ${dirOf(l10)} has hit in ${k} of ${name}'s last 10 games`, 'l10'); }
+  const season = log.filter(x=>x.date>=sinceY);
+  if (extreme(season,4)){ const [k,j]=cnt(season); add(season, `The ${dirOf(season)} is ${k}-${j} in ${name}'s games this season`, 'season'); }
+  const st = log.filter(x=>x.date>=since2 && (neu ? x.neu : (isHome ? x.home&&!x.neu : !x.home&&!x.neu)));
+  if (extreme(st,5)){ const [k,j]=cnt(st); add(st, `The ${dirOf(st)} is ${k}-${j} in ${name}'s ${neu?'neutral site':isHome?'home':'road'} games over the last two seasons`, 'site'); }
+  const hh = log.filter(x=>x.opp===opp).slice(-6);
+  if (id < opp && extreme(hh,3)){ const [k]=cnt(hh); add(hh, `The ${dirOf(hh)} has hit in ${k} of the last ${hh.length} meetings between ${name} and ${nm(opp)}`, 'h2h'); }
+  return out;
+}
+function suInsightsFor(id, opp, g){
+  const name = nm(id), l10 = teamSuLog(id, g[1]).slice(-10); if (l10.length<10) return [];
+  const k = l10.filter(x=>x.cover>0).length; if (k<8) return [];
+  let streak = 0; for (let i=l10.length-1;i>=0 && l10[i].cover>0;i--) streak++;
+  const text = streak>=5 ? `${name} has won ${streak} straight games` : `${name} has won ${k} of its last 10 games`;
+  const list = streak>=5 ? l10.slice(-streak) : l10;
+  return [{id, opp, gid:g[0], text, kind:'su', mkt:'su', w:list.length, n:list.length, avg: list.reduce((t,x)=>t+x.margin,0)/list.length, list, z: 1.5+streak/10}];
+}
 function signalCheck(ins){
+  if (ins.mkt==='su') return `<span class="verdict noise">Priced in</span>Winning streaks are already built into the moneyline, since the market knows who's good. The question is only whether the price is right; see fair win above.`;
+  if (ins.mkt==='ou' && ins.kind==='l10'){ const over = ins.text.startsWith('The over'), k = over ? ins.w : ins.n-ins.w, s={c:0,n:0};
+    for (let i=0;i<=10;i++) if (over ? i>=ins.w : i<=ins.w){ s.c+=OU10[i].c; s.n+=OU10[i].n; }
+    const pOver = s.n ? s.c/s.n : 0, p = over ? pOver : 1-pOver, [lo,hi] = wilsonCI(over?s.c:s.n-s.c, s.n), real = lo>0.524;
+    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':'Likely noise'}</span>Since 2013, after a team's ${over?'over':'under'} hit ${k}+ of its last 10, the ${over?'over':'under'} hit <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games).`; }
   if (ins.kind==='l10'){ const k=ins.w, hot=k>=7, s={c:0,n:0};
     for (let i=0;i<=10;i++) if (hot ? i>=k : i<=k){ s.c+=L10[i].c; s.n+=L10[i].n; }
     const p = s.n ? s.c/s.n : 0, [lo,hi] = wilsonCI(s.c, s.n), real = lo>0.524 || hi<0.476;
@@ -928,8 +1006,55 @@ function feedCard(g){
     ${bets.join('') || '<p class="note">No line or market price posted yet.</p>'}${insHtml}</div>`;
   return {html, ev: best, z: ins.length ? ins[0].z : -1};
 }
+function insightCard(ins, g){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g, T = DATA.tot||{};
+  const color = (DATA.teams[ins.id]||[])[3] || 'var(--muted)';
+  let bet = '', fair = '';
+  if (ins.mkt==='ats'){ if (veg===null) return null;
+    const side = ins.w*2 >= ins.n ? ins.id : ins.opp, spr = side===h ? -veg : veg;
+    if (pred!==null){ const pH = normCdf(FIT.w*(pred-veg)/FIT.sd); fair = `fair ${((side===h?pH:1-pH)*100).toFixed(1)}%`; }
+    bet = `${esc(ab(side))} ${spreadTxt(spr)}`;
+    return {bet, px:'−110', fair}; }
+  if (ins.mkt==='ou'){ const t = T[gid]; if (t==null) return null;
+    return {bet: `${ins.w*2>=ins.n?'Over':'Under'} ${t}`, px:'−110', fair:''}; }
+  if (ins.mkt==='su'){ if (kh==null||ka==null) return null; const c = ins.id===h ? kh : ka;
+    if (pred!==null){ const base = veg!==null ? veg : impliedMargin(kh/(kh+ka)), pH = normCdf((base+FIT.w*(pred-base))/FIT.sd);
+      fair = `fair ${((ins.id===h?pH:1-pH)*100).toFixed(1)}%`; }
+    return {bet: `${esc(ab(ins.id))} to win`, px: `${c}¢`, fair}; }
+  return null;
+}
+function insightHtml(ins, g, b){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g, color = (DATA.teams[ins.id]||[])[3] || 'var(--muted)';
+  const avgTxt = ins.mkt==='ou' ? `, landing ${Math.abs(ins.avg).toFixed(1)} points ${ins.avg>=0?'over':'under'} the total on average`
+    : ins.mkt==='ats' ? `, ${ins.avg>=0?'beating':'missing'} the line by ${Math.abs(ins.avg).toFixed(1)} on average` : `, by ${ins.avg.toFixed(1)} points on average`;
+  const sig = signalCheck(ins), pill = sig.slice(0, sig.indexOf('</span>')+7), rest = sig.slice(sig.indexOf('</span>')+7);
+  return `<div class="icard">
+    <div class="ih"><b><span class="dot" style="background:${color}"></span>${esc(nm(ins.id))}</b>
+      <span class="note tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
+    <div class="it">${esc(ins.text)}${avgTxt}.</div>
+    <div class="ib"><span>${b.bet}${b.fair?` <span class="note">${b.fair}</span>`:''}</span><span class="px">${b.px}</span></div>
+    <div class="strip" title="Green means this card's bet would have hit">${ins.list.map(x=>{ const hit = (x.cover>0) === (ins.w*2>=ins.n);
+      return `<i class="${!x.cover?'':hit?'w':'l'}" title="${fmtDate(x.date)}"></i>`; }).join('')}</div>
+    <details><summary>${pill} <span style="text-decoration:underline">signal check</span></summary><div style="margin-top:6px">${rest}</div></details>
+  </div>`;
+}
+function renderInsights(games){
+  const all = [];
+  for (const g of games){ const [gid,date,tm,h,a] = g;
+    for (const [id,opp] of [[h,a],[a,h]]){
+      const cands = [...(fmkt==='all'||fmkt==='ats' ? insightsFor(id,opp,g) : []), ...(fmkt==='all'||fmkt==='ou' ? ouInsightsFor(id,opp,g) : []),
+                     ...(fmkt==='all'||fmkt==='su' ? suInsightsFor(id,opp,g) : [])];
+      for (const ins of cands){ const b = insightCard(ins, g); if (b) all.push({ins, g, b}); } } }
+  all.sort((x,y)=>y.ins.z-x.ins.z);
+  const shown = all.slice(0, 60);
+  $('fsum').innerHTML = `${all.length} insight${all.length===1?'':'s'} with a posted line${all.length>60?', showing the strongest 60':''}. Tap "signal check" on any card to see whether that kind of trend has actually predicted anything.`;
+  $('feed').innerHTML = shown.map(x=>insightHtml(x.ins, x.g, x.b)).join('') || '<div class="empty">No insights with a posted line in this range yet. Books post lines about a week out.</div>';
+  $('fnote').innerHTML = `Like other picks apps, these trends are found by searching many splits, so lopsided ones turn up by chance. Unlike them, every card shows whether that kind of trend has held up. Fair % is the model blended with the market; see Picks for EV.`;
+}
 function renderFeed(){
   const today = todayET(), end = addDays(today, fdays);
+  $('fmkt').hidden = fview!=='ins'; $('fsort').hidden = fview!=='picks';
+  if (fview==='ins'){ renderInsights(DATA.games.filter(g=>g[6]===null && g[1]>=today && g[1]<=end)); return; }
   let cards = DATA.games.filter(g=>g[6]===null && g[8]!==null && g[1]>=today && g[1]<=end).map(feedCard);
   if (fsort==='ev') cards.sort((x,y)=>(y.ev??-9)-(x.ev??-9));
   if (fsort==='trend') cards.sort((x,y)=>y.z-x.z);
@@ -940,6 +1065,10 @@ function renderFeed(){
 }
 $('fsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fsort=b.dataset.sort;
   document.querySelectorAll('#fsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
+$('fview').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fview=b.dataset.view;
+  document.querySelectorAll('#fview .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
+$('fmkt').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fmkt=b.dataset.mkt;
+  document.querySelectorAll('#fmkt .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
 $('frange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fdays=+b.dataset.days;
   document.querySelectorAll('#frange .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });
 $('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });

@@ -3,8 +3,8 @@ returning production. Needs a free API key in the CFBD_API_KEY env var
 (https://collegefootballdata.com/key). Writes data/preseason.json:
 {year: {team_id: {"talent": float|null, "returning_ppa": float|null}}}
 for the seasons requested, matched to our own team id/name list.
-Run before export2.py so the model can use it; does nothing to the model yet,
-this is the connectivity + matching test.
+Only fetches seasons missing from the committed preseason.json, since talent and
+returning production don't change once a season starts and CFBD's free tier caps calls.
 """
 import sys, os, json, unicodedata, urllib.request
 sys.path.insert(0, '.')
@@ -34,9 +34,17 @@ def cfbd_get(path, **params):
         return json.loads(r.read())
 
 def main():
+    path = DATA_DIR + '/preseason.json'
+    try:
+        out = json.load(open(path))
+    except (FileNotFoundError, ValueError):
+        out = {}
+    years = [y for y in range(2015, 2027) if str(y) not in out]
+    if not years:
+        print("preseason.json already has 2015 to 2026, no CFBD calls needed")
+        return
     if not API_KEY:
-        print("No CFBD_API_KEY set, skipping preseason fetch")
-        json.dump({}, open(DATA_DIR + '/preseason.json', 'w'))
+        print("No CFBD_API_KEY set, skipping preseason fetch for", years)
         return
 
     site = json.load(open(DATA_DIR + '/site_data.json'))
@@ -46,8 +54,6 @@ def main():
         n = ALIASES.get(norm(name), norm(name))
         return norm_to_id.get(n)
 
-    years = list(range(2015, 2027))
-    out = {}
     talent_unmatched, ret_unmatched = set(), set()
     talent_n, ret_n = 0, 0
 
@@ -76,12 +82,12 @@ def main():
             print(f"returning production fetch failed for {y}:", e)
 
         if year_out:
-            out[y] = year_out
+            out[str(y)] = year_out
 
     print(f"talent rows matched: {talent_n}, returning production rows matched: {ret_n}")
     print(f"unmatched talent team names ({len(talent_unmatched)}):", sorted(talent_unmatched)[:20])
     print(f"unmatched returning-production team names ({len(ret_unmatched)}):", sorted(ret_unmatched)[:20])
-    json.dump(out, open(DATA_DIR + '/preseason.json', 'w'))
+    json.dump(out, open(path, 'w'))
 
 if __name__ == "__main__":
     main()

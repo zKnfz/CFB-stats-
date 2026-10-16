@@ -1,8 +1,16 @@
-"""Fill in sportsbook spreads for upcoming games from CollegeFootballData's /lines endpoint.
-Finished games already carry a closing line from the ESPN data; upcoming ones have none,
-so their vegas field (games row index 9, expected home margin) is null until this runs.
-Needs CFBD_API_KEY, skips gracefully without it. Run after export3.py, before kalshi.py.
-CFBD game ids are ESPN ids, same as ours, so games match by id directly.
+"""Sportsbook lines from CollegeFootballData's /lines endpoint.
+
+Keeps data/lines_hist.json (committed): {season: {game_id: [close_home_margin, open_home_margin,
+total, open_total]}}, nulls where a book didn't post one. Past seasons are fetched once and then
+reused; only the current season is refetched each run (2 calls), since CFBD's free tier caps calls.
+
+Then, in site_data.json:
+  - upcoming games get their spread (games row index 9, expected home margin), which the
+    ESPN data only has for finished games
+  - 'lineopen': {gid: opening home margin} for upcoming games
+  - 'tot': {gid: total} for every game with a posted total, for over/under trends
+Needs CFBD_API_KEY to refresh; without it the cached history is still applied.
+CFBD game ids are ESPN ids, same as ours. Run after export3.py, before kalshi.py.
 """
 import sys, os, json, urllib.request
 sys.path.insert(0, '.')
@@ -10,6 +18,8 @@ from paths import DATA_DIR
 
 API_KEY = os.environ.get("CFBD_API_KEY")
 SEASON = 2026
+FIRST = 2013
+HIST = DATA_DIR + '/lines_hist.json'
 PROVIDERS = ["consensus", "DraftKings", "ESPN Bet", "Bovada", "William Hill (New Jersey)"]
 
 
@@ -21,9 +31,16 @@ def cfbd_get(path, **params):
         return json.loads(r.read())
 
 
-def pick_line(lines):
-    """Preferred provider's spread (home perspective, negative = home favored), else the first one posted."""
-    usable = [l for l in lines if l.get("spread") not in (None, "")]
+def num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def pick(lines, key):
+    """Preferred provider's line that has `key` posted, else the first one that does."""
+    usable = [l for l in lines if num(l.get(key)) is not None]
     if not usable:
         return None
     by_prov = {l.get("provider"): l for l in usable}
@@ -33,41 +50,62 @@ def pick_line(lines):
     return usable[0]
 
 
-def main():
-    if not API_KEY:
-        print("No CFBD_API_KEY set, skipping lines fetch")
-        return
-    site = json.load(open(DATA_DIR + '/site_data.json'))
-    upcoming = {g[0]: g for g in site['games'] if g[6] is None}
-
-    spreads, opens, samples = {}, {}, []
+def fetch_season(y):
+    out, samples = {}, []
     for st in ("regular", "postseason"):
-        try:
-            rows = cfbd_get("/lines", year=SEASON, seasonType=st)
-        except Exception as e:
-            print(f"lines fetch failed for {st}:", e)
-            continue
-        for row in rows:
-            l = pick_line(row.get("lines") or [])
-            if l is None:
+        for row in cfbd_get("/lines", year=y, seasonType=st):
+            lines = row.get("lines") or []
+            s, t = pick(lines, "spread"), pick(lines, "overUnder")
+            if s is None and t is None:
                 continue
-            gid = int(row["id"])
-            spreads[gid] = -float(l["spread"])  # CFBD spread is the home side's number, so home margin is its negative
-            if l.get("spreadOpen") not in (None, ""):
-                opens[gid] = -float(l["spreadOpen"])
-            if gid in upcoming and len(samples) < 3:
-                samples.append((row.get("homeTeam"), row.get("awayTeam"), l.get("provider"), l.get("spread"), l.get("formattedSpread")))
+            # CFBD spread is the home side's number (negative = home favored), so home margin is its negative
+            close = -num(s["spread"]) if s else None
+            opn = -num(s.get("spreadOpen")) if s and num(s.get("spreadOpen")) is not None else None
+            tot = num(t["overUnder"]) if t else None
+            topn = num(t.get("overUnderOpen")) if t else None
+            out[str(row["id"])] = [close, opn, tot, topn]
+            if s and len(samples) < 2:
+                samples.append((row.get("homeTeam"), row.get("awayTeam"), s.get("spread"), s.get("formattedSpread"), tot))
+    return out, samples
 
+
+def main():
+    try:
+        hist = json.load(open(HIST))
+    except (FileNotFoundError, ValueError):
+        hist = {}
+    if API_KEY:
+        todo = [y for y in range(FIRST, SEASON + 1) if str(y) not in hist or y == SEASON]
+        for y in todo:
+            try:
+                hist[str(y)], samples = fetch_season(y)
+                print(f"lines {y}: {len(hist[str(y)])} games", samples if y == SEASON else "")
+            except Exception as e:
+                print(f"lines fetch failed for {y}:", e)
+        json.dump(hist, open(HIST, 'w'), separators=(',', ':'))
+    else:
+        print("No CFBD_API_KEY set, using cached lines only")
+
+    site = json.load(open(DATA_DIR + '/site_data.json'))
+    flat = {int(g): v for season in hist.values() for g, v in season.items()}
     filled = 0
-    site['lineopen'] = {}
-    for gid, g in upcoming.items():
-        if gid in spreads:
-            g[9] = spreads[gid]
-            filled += 1
-        if gid in opens:
-            site['lineopen'][str(gid)] = opens[gid]
-    print(f"{len(spreads)} games with lines from CFBD, filled {filled} of {len(upcoming)} upcoming games, {len(site['lineopen'])} with an opening line")
-    print("samples (home, away, provider, spread, formatted):", samples)
+    site['lineopen'], site['tot'] = {}, {}
+    for g in site['games']:
+        v = flat.get(g[0])
+        if not v:
+            continue
+        close, opn, tot, _ = v
+        if g[6] is None:
+            if close is not None:
+                g[9] = close
+                filled += 1
+            if opn is not None:
+                site['lineopen'][str(g[0])] = opn
+        if tot is not None:
+            site['tot'][str(g[0])] = tot
+    up = sum(1 for g in site['games'] if g[6] is None)
+    print(f"filled spreads for {filled} of {up} upcoming games, {len(site['lineopen'])} with an opening line, "
+          f"totals for {len(site['tot'])} games")
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 

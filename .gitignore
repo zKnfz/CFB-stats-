@@ -1,3 +1,4 @@
 data/*
 !data/preseason.json
+!data/lines_hist.json
 __pycache__/
