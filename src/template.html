@@ -1684,7 +1684,8 @@ function gvSignal(v){ if (v.spreadEdge==null || Math.abs(v.spreadEdge)<1) return
     if (S.ats.n>=10 && S.quality!=='Weak'){ const q = aSide ? S.ats.w/S.ats.n : S.ats.l/S.ats.n;
       why.push(`Balanced analogs (${S.quality.toLowerCase()}, ${S.ats.n} lined): the ${esc(ab(side))}-like side covered ${Math.round(q*100)}%. Not counted: ${AN_BT.txt}`); }
     else why.push('Analogs too few or too weak to describe.'); }
-  const op = (DATA.lineopen||{})[v.gid];
+  const op = openOf(v.g);
+  if (op!=null && v.pred!=null && Math.abs(v.pred-op)>=1){ const oc = openCheck(v.pred-op); why.push(`Vs the opener the model liked ${esc(ab(v.pred-op>0?v.h:v.a))} by ${Math.abs(v.pred-op).toFixed(1)}. ${oc.txt}`); }
   if (!v.done && op!=null && v.spread!=null && Math.abs(v.spread-op)>=1){ const toward = (v.spread-op)>0 ? v.h : v.a, s = toward===side ? 1 : -1; sc.push(s);
     why.push(`Line moved ${Math.abs(v.spread-op).toFixed(1)} toward ${esc(ab(toward))} since it opened: ${s>0?'supports':'against'}.`); }
   const pos = sc.filter(x=>x>0).length, neg = sc.filter(x=>x<0).length;
@@ -1698,6 +1699,27 @@ function gvCoverage(v){ const g = v.g, y = seasonOf(v.date), t = FPX && anPool()
     ${it(gpa!=null&&gpb!=null&&Math.min(gpa,gpb)>=3, t?`FBS games so far: ${esc(ab(t.v.A))} ${gpa}, ${esc(ab(t.v.B))} ${gpb}${Math.min(gpa,gpb)===0?' (preseason prior only)':''}`:'games played N/A')}
     ${it(v.spread!=null, v.spread!=null?'Spread':'No spread')}${it(v.total!=null, v.total!=null?'Total':'No total')}${it(v.mlH!=null||v.kh!=null, v.mlH!=null?'Moneyline':v.kh!=null?'Kalshi price':'No moneyline')}
     ${it(!!t, t?`Fingerprint ${used} of ${AN_FEATS.length} features`:'No fingerprint')}</div>`; }
+
+// ---------- the opening line test ----------
+// The model's pregame number only uses games before that week, so it exists when the line opens. Here we ask
+// what happened when it disagreed with the opener: did the line move toward the model by kickoff (closing line
+// value), and did the model's side cover the opening number? 2025+ games were never used to fit the model.
+const OPEN = DATA.open || {};
+const openOf = g => OPEN[g[0]] ?? (DATA.lineopen||{})[g[0]] ?? null;
+const OB = (()=>{ const B = [[1,2],[2,3],[3,5],[5,8],[8,Infinity],[1,Infinity]], mk = ()=>({w:0,n:0,tw:0,ta:0,mv:0,m:0});
+  const out = B.map(b=>({b, all:mk(), test:mk()}));
+  for (const g of DATA.games){ if (g[6]===null || g[8]===null || g[9]===null) continue; const op = openOf(g); if (op==null) continue;
+    const e = g[8]-op, sg = Math.sign(e), cov = Math.sign((g[6]-g[7]-op)*sg), mv = (g[9]-op)*sg, test = +seasonOf(g[1])>=2025;
+    for (const x of out){ if (Math.abs(e)<x.b[0] || Math.abs(e)>=x.b[1]) continue;
+      for (const s of test ? [x.all, x.test] : [x.all]){ s.m++; s.mv += mv; if (mv>0) s.tw++; if (mv<0) s.ta++; if (cov){ s.n++; if (cov>0) s.w++; } } } }
+  return out; })();
+const obFor = e => OB.slice(0,5).find(x=>Math.abs(e)>=x.b[0] && Math.abs(e)<x.b[1]);  // the last entry is the 1+ total
+function openCheck(e){  // what the line and the result did after openers like this one
+  if (e==null) return null; if (Math.abs(e)<1) return {lbl:'Within a point', cls:'na', txt:'Model and opener are within a point.'};
+  const b = obFor(e), t = b.test, [lo] = wilsonCI(t.w, t.n), p = t.n ? t.w/t.n : null, tw = t.m ? t.tw/t.m : null, ta = t.m ? t.ta/t.m : null;
+  const txt = `When the model disagreed with the opener by ${b.b[1]===Infinity?b.b[0]+'+':b.b[0]+' to '+b.b[1]} points in 2025+ games (${t.m}), the line moved toward the model ${tw==null?'n/a':Math.round(tw*100)+'%'} of the time and away ${ta==null?'n/a':Math.round(ta*100)+'%'} (average ${t.m?(t.mv/t.m>=0?'+':'')+(t.mv/t.m).toFixed(1):'n/a'} points), and the model side covered the opening number ${p==null?'n/a':(p*100).toFixed(1)+'%'} (break even 52.4%).`;
+  if (t.n>=100 && lo>0.524) return {lbl:'Beat the opener', cls:'hg1', txt};
+  return {lbl: tw!=null && t.m>=100 && tw>ta+0.15 ? 'Line tends to follow' : 'Unproven', cls: tw!=null && t.m>=100 && tw>ta+0.15 ? 'hg1' : 'na', txt}; }
 
 // ---------- Game Research view ----------
 let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
@@ -1847,12 +1869,14 @@ function renderGame(){
       ${key('Market spread','k', sp(v.spread, h), v.spread!=null && (DATA.lineopen||{})[v.gid]!=null ? `opened ${sp(DATA.lineopen[v.gid], h)}` : 'closing or current line')}
       ${key('Model spread','m', sp(v.pred, h), 'pregame projection')}
       ${key('Spread edge','m', se==null?'<span class="na">N/A</span>':`${esc(ab(se>0?h:a))} +${Math.abs(se).toFixed(1)}`, `<span class="cell ${cS.cls}" title="${esc(cS.txt)}">${cS.lbl}</span>`)}
+      ${(()=>{ const op = openOf(g), eo = op==null||v.pred==null ? null : v.pred-op, oc = openCheck(eo);
+        return key('Edge vs opener','m', eo==null?'<span class="na">N/A</span>':Math.abs(eo)<0.05?'None':`${esc(ab(eo>0?h:a))} +${Math.abs(eo).toFixed(1)}`, eo==null?'no opening line stored':`opened ${sp(op,h)} <span class="cell ${oc.cls}" title="${esc(oc.txt)}">${oc.lbl}</span>`); })()}
       ${key('Market total','k', naTxt(v.total, x=>x.toFixed(1)), '')}
       ${key('Model total','m', naTxt(v.ptot, x=>x.toFixed(1)), 'pregame projection')}
       ${key('Total edge','m', te==null?'<span class="na">N/A</span>':`${te>0?'Over':'Under'} ${Math.abs(te).toFixed(1)}`, `<span class="cell ${cT.cls}" title="${esc(cT.txt)}">${cT.lbl}</span>`)}
       ${key('Model win','m', v.pModelH==null?'<span class="na">N/A</span>':`${esc(ab(v.pModelH>=0.5?h:a))} ${(Math.max(v.pModelH,1-v.pModelH)*100).toFixed(1)}%`, mkPct==null?'no market price':`market ${esc(ab(mkPct>=0.5?h:a))} ${(Math.max(mkPct,1-mkPct)*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`)}
     </div>
-    <p class="note" style="margin:8px 0 0">${esc(cS.txt)} ${esc(cT.txt)}</p>
+    <p class="note" style="margin:8px 0 0">${esc(cS.txt)} ${esc(cT.txt)} ${(()=>{ const op = openOf(g); const oc = op==null||v.pred==null ? null : openCheck(v.pred-op); return oc ? esc(oc.txt) : ''; })()}</p>
     ${gvCoverage(v)}
     <div class="chips" style="margin-top:10px"><button class="chip" id="gvMatch" type="button">Line history, situations, head to head ›</button><button class="chip" id="gvSave" type="button">${wlHas(v.gid)?'★ On watchlist':'+ Watchlist'}</button></div>
   </div>`;
@@ -2130,7 +2154,9 @@ function edgeRows(kind){
   const today = todayET(), end = addDays(today, edays), out = [];
   for (const g of DATA.games){ if (g[6]!==null || g[1]<today || g[1]>end) continue; const v = gameView(g);
     if (kind==='spread' && v.spreadEdge!=null){ const side = v.spreadEdge>0 ? v.h : v.a, sg = side===v.h ? 1 : -1;
-      out.push({v, side, e: Math.abs(v.spreadEdge), mkt: spreadTxt(-sg*v.spread), model: spreadTxt(-sg*v.pred), pModel: normCdf(Math.abs(v.spreadEdge)/sdFor(g)), pMkt: 0.5, conf: confidence('spread', v.spreadEdge)}); }
+      const op = openOf(g), eo = op==null ? null : sg*(v.pred-op);
+      out.push({v, side, e: Math.abs(v.spreadEdge), mkt: spreadTxt(-sg*v.spread), model: spreadTxt(-sg*v.pred), pModel: normCdf(Math.abs(v.spreadEdge)/sdFor(g)), pMkt: 0.5, conf: confidence('spread', v.spreadEdge),
+        open: op==null ? null : spreadTxt(-sg*op), eo, oc: op==null ? null : openCheck(v.pred-op)}); }
     if (kind==='total' && v.totalEdge!=null){ const over = v.totalEdge>0;
       out.push({v, side: over?'Over':'Under', e: Math.abs(v.totalEdge), mkt: `${over?'Over':'Under'} ${v.total}`, model: v.ptot.toFixed(1), pModel: normCdf(Math.abs(v.totalEdge)/TOTSD), pMkt: 0.5, conf: confidence('total', v.totalEdge)}); }
     if (kind==='ml' && v.pMktH!=null && v.pModelH!=null){ const dH = v.pModelH - v.pMktH, side = dH>=0 ? v.h : v.a, pm = side===v.h ? v.pModelH : 1-v.pModelH, pk = side===v.h ? v.pMktH : 1-v.pMktH;
@@ -2144,8 +2170,8 @@ function renderEdges(){
   const row = (r, cells) => `<tr><td class="l"><span class="tmlink glink" data-gid="${r.v.gid}" tabindex="0" role="link">${esc(ab(r.v.a))} ${r.v.neu?'vs':'@'} ${esc(ab(r.v.h))} ›</span> <span class="note">${fmtDate(r.v.date,true)}</span></td>${cells}<td><span class="cell ${r.conf.cls}" title="${esc(r.conf.txt)}">${r.conf.lbl}</span></td><td><button class="btn wlAdd" data-gid="${r.v.gid}" type="button" style="min-height:0;padding:2px 8px">${wlHas(r.v.gid)?'★':'☆'}</button></td></tr>`;
   const empty = n => `<tr><td colspan="${n}" class="empty">No upcoming games with both a market line and a model number in this range.</td></tr>`;
   const S = edgeRows('spread');
-  $('es').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','Side the model likes more than the market','l'],['Market','Current or closing spread for that side'],['Model','Model spread for that side'],['Edge','Points of disagreement'],['Model cover','Raw model chance this side covers (normal spread around the projection). Unshrunk, so it runs high.'],['Break even','At −110'],['Why the model leans','Model margin split by ingredient, current ratings','l'],['Track record','How this edge size has done in 2025+ games'],['','Save to watchlist']]);
-  $('es').querySelector('tbody').innerHTML = S.length ? S.map(r=>row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${edgeCell(r.e)}</td><td>${(r.pModel*100).toFixed(1)}%</td><td class="note">52.4%</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`)).join('') : empty(10);
+  $('es').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','Side the model likes more than the market','l'],['Opened','Opening spread for that side'],['Market','Current or closing spread for that side'],['Model','Model spread for that side'],['Edge','Points of disagreement with the current line'],['Vs open','Model edge for that side vs the opener (negative: the model now likes the other side of the opener). The tag says what openers like this did in 2025+.'],['Model cover','Raw model chance this side covers (normal spread around the projection). Unshrunk, so it runs high.'],['Break even','At −110'],['Why the model leans','Model margin split by ingredient, current ratings','l'],['Track record','How this edge size has done in 2025+ games'],['','Save to watchlist']]);
+  $('es').querySelector('tbody').innerHTML = S.length ? S.map(r=>row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.open??'<span class="na">N/A</span>'}</td><td>${r.mkt}</td><td>${r.model}</td><td>${edgeCell(r.e)}</td><td>${r.eo==null?'<span class="na">N/A</span>':`${f1(r.eo)} <span class="cell ${r.oc.cls}" title="${esc(r.oc.txt)}">${r.oc.lbl}</span>`}</td><td>${(r.pModel*100).toFixed(1)}%</td><td class="note">52.4%</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`)).join('') : empty(12);
   const T = edgeRows('total');
   $('et').querySelector('thead').innerHTML = head([['Matchup','','l'],['Lean','','l'],['Market','Sportsbook total'],['Model','Pregame projected total'],['Edge','Points of disagreement'],['Model chance','Raw model chance that side hits, using how far real totals land from the projection'],['Break even','At −110'],['Projected scores','Each team\'s expected points from the points ratings','l'],['Track record','How this edge size has done in 2025+ games'],['','']]);
   $('et').querySelector('tbody').innerHTML = T.length ? T.map(r=>{ const tH = current.byId.get(r.v.h), tA = current.byId.get(r.v.a);
@@ -2156,7 +2182,8 @@ function renderEdges(){
   $('em').querySelector('tbody').innerHTML = M.length ? M.map(r=>{ const price = r.v.mktSrc==='book' ? (side=>{ const o = side===r.v.h ? r.v.mlH : r.v.mlA; return o>0 ? 1+o/100 : 1+100/(-o); })(r.side) : 1/((r.side===r.v.h?r.v.kh:r.v.ka)/100);
     const pv = r.pModel*price - 1;
     return row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${(r.pMkt*100).toFixed(1)}%</td><td>${edgeCell(r.e)}</td><td>${sgnPct(pv)}</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`); }).join('') : empty(10);
-  $('enote').innerHTML = `Model cover and model chance are the raw model's own numbers. The Trends tab's fair odds, which keep only the share of the model that has held up against closing lines, are about 50% for every spread right now. Totals spread: real scores land about ${TOTSD.toFixed(1)} points from the projected total on average (root mean square).`;
+  const o1 = OB.find(x=>x.b[0]===1&&x.b[1]===Infinity).test;
+  $('enote').innerHTML = `<b>Opening lines:</b> in 2025+ games where the model disagreed with the opener by a point or more (${o1.m}), the line moved toward the model ${Math.round(100*o1.tw/o1.m)}% of the time and away ${Math.round(100*o1.ta/o1.m)}%, and the model side covered the opener ${(100*o1.w/o1.n).toFixed(1)}% (break even 52.4%, 95% range ${wilsonCI(o1.w,o1.n).map(x=>(x*100).toFixed(1)).join(' to ')}%). The market tends to move the model's way, but by kickoff most of that gap is gone, so any edge lives at the open, and it is not proven yet. Model cover and model chance are the raw model's own numbers. The Trends tab's fair odds, which keep only the share of the model that has held up against closing lines, are about 50% for every spread right now. Totals spread: real scores land about ${TOTSD.toFixed(1)} points from the projected total on average (root mean square).`;
   renderWLG();
 }
 

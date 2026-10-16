@@ -9,6 +9,7 @@ Then, in site_data.json:
   - upcoming games get their spread (games row index 9, expected home margin), which the
     ESPN data only has for finished games
   - 'lineopen': {gid: opening home margin} for upcoming games
+  - 'open': {gid: opening home margin} for every game with an opener (2023 on), for the opening line backtest
   - 'tot': {gid: total} for every game with a posted total, for over/under trends
   - 'ml': {gid: [home American odds, away American odds]} where a book posted a moneyline
 Needs CFBD_API_KEY to refresh; without it the cached history is still applied.
@@ -93,7 +94,7 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     flat = {int(g): v for season in hist.values() for g, v in season.items()}
     filled = 0
-    site['lineopen'], site['tot'], site['ml'] = {}, {}, {}
+    site['lineopen'], site['tot'], site['ml'], site['open'] = {}, {}, {}, {}
     for g in site['games']:
         v = flat.get(g[0])
         if not v:
@@ -101,6 +102,8 @@ def main():
         close, opn, tot = v[0], v[1], v[2]
         if len(v) >= 6 and v[4] is not None and v[5] is not None:
             site['ml'][str(g[0])] = [v[4], v[5]]
+        if opn is not None:
+            site['open'][str(g[0])] = opn
         if g[6] is None:
             if close is not None:
                 g[9] = close
@@ -111,7 +114,7 @@ def main():
             site['tot'][str(g[0])] = tot
     up = sum(1 for g in site['games'] if g[6] is None)
     print(f"filled spreads for {filled} of {up} upcoming games, {len(site['lineopen'])} with an opening line, "
-          f"totals for {len(site['tot'])} games, moneylines for {len(site['ml'])}")
+          f"totals for {len(site['tot'])} games, moneylines for {len(site['ml'])}, openers for {len(site['open'])}")
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 

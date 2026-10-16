@@ -24,7 +24,7 @@ Pipeline, in order (all scripts live in `src/`, run from `src/`):
 | Early years | `pregame.py` | `pregame.pkl`: adds 2004 to 2007 |
 | Fit + export | `export2.py` | `site_data.json`: model weights, backtest stats, per-game rows, priors |
 | Games | `export3.py` | adds pregame picks for every past game and upcoming 2026 games |
-| Spreads | `lines.py` | keeps `lines_hist.json` (committed): closing and opening spread plus total for every game since 2013, past seasons fetched once, current season refreshed each run. Fills spreads into upcoming games and adds `lineopen` and `tot` to `site_data.json` |
+| Spreads | `lines.py` | keeps `lines_hist.json` (committed): closing and opening spread plus total for every game since 2013, past seasons fetched once, current season refreshed each run. Fills spreads into upcoming games and adds `lineopen`, `open` (every game's opener) and `tot` to `site_data.json` |
 | Market odds | `kalshi.py` | adds live Kalshi odds to upcoming games, logs a snapshot to `kalshi_history.jsonl` |
 | Preseason signal | `preseason.py` | `preseason.json` (committed): CFBD talent composite + returning production, only fetches seasons missing from the file |
 
@@ -63,7 +63,13 @@ Raw EPA (`E`) is still solved for display columns, but it's not in the rating.
 
 Out of sample (2025 and 2026 so far): average miss 12.40 points, picks 73.3% of winners. Vegas: 11.74 and 75.7%. The earlier EPA-only version missed by 12.70.
 
-Against closing lines the market is hard to beat: on the 2025+ test years the closing spread alone misses by 11.74, and blending in any share of the model makes it slightly worse (10% model: 11.75, 30%: 11.82). Model vs line disagreements of 3+ points covered 60.5% in training years but 49.5% in test years. Fit on recent windows the share is about 0 (2016 to 2026: −0.02, 2021 to 2026: −0.06). So no edge vs closing lines is proven; beating opening lines is the untested next question. `lines_hist.json` has openers for 2023 on (about 2,400 games), earlier seasons only have closers.
+Against closing lines the market is hard to beat: on the 2025+ test years the closing spread alone misses by 11.74, and blending in any share of the model makes it slightly worse (10% model: 11.75, 30%: 11.82). Model vs line disagreements of 3+ points covered 60.5% in training years but 49.5% in test years. Fit on recent windows the share is about 0 (2016 to 2026: −0.02, 2021 to 2026: −0.06). So no edge vs closing lines is proven.
+
+Opening lines (tested Oct 2026, `lines_hist.json` has openers for 2023 on, about 2,500 games; the model's pregame number only uses games before that week, so it exists when lines open):
+- The line moves toward the model. Every season 2023 to 2026, when the model disagreed with the opener by 1+ points, the closing line moved toward the model about twice as often as away (2025+: 54% toward, 27% away, average +1.0 point; at 8+ point disagreements 70% toward).
+- Betting the model's side at the opener: 2025+ test games covered 54.6% of 845 (95% range 51.2 to 58.0), all 2023+ seasons 52.4% of 1,966. Against the closing number the same bets cover about 50%. So the model's information is real but the market absorbs it by kickoff; any edge lives at the open and is not proven above 52.4% yet. Small disagreements (1 to 3 points) did better than big ones (8+ covered about 51%: big gaps usually mean news the model can't see, like injuries).
+- Blending the model into the opener: least squares share about 0.21 (2025+), vs about 0 against closing lines; opener MAE 11.82 vs 11.80 with 10 to 20% model.
+- On the page: `DATA.open` (every game's opener, from `lines.py`), `OB` (the same backtest live in the browser, by edge size, all years and 2025+), `openCheck()` labels: "Beat the opener" only if the 2025+ Wilson lower bound beats 52.4% on 100+ games (nothing does yet), "Line tends to follow" when toward beats away by 15+ points on 100+ games, else "Unproven". Shown as Edge vs opener on the game page, a Vs open column and an Opening lines note in Edges, and in the signal list.
 
 Things tested that didn't help: recency weighting (half-lives of 42 to 140 days), including raw EPA alongside turnover-free EPA, adding explosiveness (EPA per successful, turnover-free play) as a fourth rating input. Explosiveness still shows as a display column (`EX` in `FEATS`), its signal is just already inside EPA per play, so it moved test MAE by under 0.01 points.
 
