@@ -867,9 +867,11 @@ $('glist').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el
 
 // ---------- trends feed ----------
 function wilsonCI(w, n){ if (!n) return [0,1]; const z=1.96, p=w/n, d=1+z*z/n, c=p+z*z/(2*n), h=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n)); return [(c-h)/d,(c+h)/d]; }
-// how much of the model's disagreement with the closing line to keep, fit on 2008 to 2024 only
+// how much of the model's disagreement with the closing line to keep. Fit on the last 5 seasons of finished
+// games only: markets have tightened, and since about 2016 that share has been near zero.
+const FIT_FROM = +SEASONS[SEASONS.length-5];
 const FIT = (()=>{ let num=0, den=0; const rows=[];
-  for (const g of DATA.games){ if (g[6]===null||g[8]===null||g[9]===null) continue; const y=+seasonOf(g[1]); if (y<2008||y>2024) continue;
+  for (const g of DATA.games){ if (g[6]===null||g[8]===null||g[9]===null) continue; const y=+seasonOf(g[1]); if (y<FIT_FROM) continue;
     const d=g[8]-g[9], r=(g[6]-g[7])-g[9]; num+=r*d; den+=d*d; rows.push([d,r]); }
   const w = den ? Math.max(0, Math.min(1, num/den)) : 0; let ss=0; for (const [d,r] of rows) ss+=(r-w*d)**2;
   return {w, sd: Math.sqrt(ss/Math.max(1,rows.length))}; })();
@@ -895,7 +897,12 @@ const OU10 = (()=>{ const T=DATA.tot||{}, hist=new Map(), out=Array.from({length
       h.push(r>0); if (h.length>10) h.shift(); hist.set(id,h); } }
   return out; })();
 const ev110 = p => p*(100/110) - (1-p);
-function impliedMargin(p){ let lo=-60, hi=60; for (let i=0;i<50;i++){ const m=(lo+hi)/2; normCdf(m/FIT.sd)<p ? lo=m : hi=m; } return (lo+hi)/2; }
+// spread to win chance, fit to real results since 2008 (a bell curve underrates big favorites)
+const WINK = (()=>{ const rows = DATA.games.filter(g=>g[6]!==null&&g[9]!==null&&g[6]!==g[7]&&+seasonOf(g[1])>=2008).map(g=>[g[9], g[6]>g[7]?1:0]);
+  let best=[8.3,-Infinity]; for (let k=5; k<=12; k+=0.05){ let ll=0; for (const [v,w] of rows){ const p=1/(1+Math.exp(-v/k)); ll += w?Math.log(p):Math.log(1-p); } if (ll>best[1]) best=[k,ll]; }
+  return best[0]; })();
+const winP = m => 1/(1+Math.exp(-m/WINK));
+function impliedMargin(p){ p = Math.min(0.995, Math.max(0.005, p)); return WINK*Math.log(p/(1-p)); }
 const kelly110 = p => Math.max(0, (p*(100/110) - (1-p)) / (100/110));
 const sgnPct = v => (v>=0?'+':'−')+Math.abs(v*100).toFixed(1)+'%';
 let fsort = 'ev', fdays = 7, fview = 'ins', fmkt = 'all';
@@ -957,12 +964,15 @@ function signalCheck(ins){
   if (ins.mkt==='su') return `<span class="verdict noise">Priced in</span>Winning streaks are already built into the moneyline, since the market knows who's good. The question is only whether the price is right; see fair win above.`;
   if (ins.mkt==='ou' && ins.kind==='l10'){ const over = ins.text.startsWith('The over'), k = over ? ins.w : ins.n-ins.w, s={c:0,n:0};
     for (let i=0;i<=10;i++) if (over ? i>=ins.w : i<=ins.w){ s.c+=OU10[i].c; s.n+=OU10[i].n; }
-    const pOver = s.n ? s.c/s.n : 0, p = over ? pOver : 1-pOver, [lo,hi] = wilsonCI(over?s.c:s.n-s.c, s.n), real = lo>0.524;
-    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':'Likely noise'}</span>Since 2013, after a team's ${over?'over':'under'} hit ${k}+ of its last 10, the ${over?'over':'under'} hit <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games).`; }
+    const pOver = s.n ? s.c/s.n : 0, p = over ? pOver : 1-pOver, [lo,hi] = wilsonCI(over?s.c:s.n-s.c, s.n), real = lo>0.524 && s.n>=200;
+    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':lo>0.524?'Small sample':'Likely noise'}</span>Since 2013, after a team's ${over?'over':'under'} hit ${k}+ of its last 10, the ${over?'over':'under'} hit <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games).`; }
   if (ins.kind==='l10'){ const k=ins.w, hot=k>=7, s={c:0,n:0};
     for (let i=0;i<=10;i++) if (hot ? i>=k : i<=k){ s.c+=L10[i].c; s.n+=L10[i].n; }
-    const p = s.n ? s.c/s.n : 0, [lo,hi] = wilsonCI(s.c, s.n), real = lo>0.524 || hi<0.476;
-    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':'Likely noise'}</span>Since 2004, teams that ${hot?`covered ${k}+`:`covered ${k} or fewer`} of their last 10 covered <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games). ${real?'':'That is coin flip territory, so the streak itself has not predicted anything.'}`; }
+    const p = s.n ? s.c/s.n : 0, [lo,hi] = wilsonCI(s.c, s.n), off = lo>0.524 || hi<0.476, real = off && s.n>=200;
+    const who = hot ? (k===10?'covered all 10':`covered ${k}+`) : (k===0?'covered none':`covered ${k} or fewer`);
+    const tag = real ? 'Has held up' : off ? 'Small sample' : 'Likely noise';
+    const why = real ? '' : off ? `Only ${s.n} games, and it's the most extreme of 11 streak lengths checked, so a gap this size turns up by chance.` : 'That is coin flip territory, so the streak itself has not predicted anything.';
+    return `<span class="verdict ${real?'real':'noise'}">${tag}</span>Since 2004, teams that ${who} of their last 10 covered <b>${(p*100).toFixed(1)}%</b> of the next game (${s.n.toLocaleString()} games). ${why}`; }
   const [lo,hi] = wilsonCI(ins.w, ins.n), luck = lo<=0.5 && hi>=0.5;
   return `<span class="verdict noise">${luck?'Could be luck':'Unusual, untested'}</span>95% range ${(lo*100).toFixed(0)}% to ${(hi*100).toFixed(0)}% on ${ins.n} games. ${luck?'A coin flipped this many times lands this lopsided often enough that this proves nothing.':'Lopsided, but it was picked out of many possible splits, which makes streaks like this easy to find by chance.'}`;
 }
@@ -985,16 +995,20 @@ function feedCard(g){
     best = ev;
     bets.push(`<div class="fbet"><div><div class="k">Spread</div><b>${esc(ab(side))} ${spreadTxt(spr)}</b> ${move}</div><div class="note" style="text-align:right">−110</div>
       <div class="fstats"><span>Fair cover<b>${(p*100).toFixed(1)}%</b></span><span>EV<b style="color:${ev>=0?'var(--good)':'var(--bad)'}">${sgnPct(ev)}</b></span><span>¼ Kelly<b>${k>0?(k*100).toFixed(1)+'%':'none'}</b></span></div>
-      <div class="note" style="grid-column:1/-1">Model alone: ${esc(ab(pred>=0?h:a))} by ${Math.abs(pred).toFixed(1)}. At this size of edge the side covered ${bk.test.n?(100*bk.test.w/bk.test.n).toFixed(1)+'%':'n/a'} of ${bk.test.n} games in the 2025+ test years.</div></div>`);
+      <div class="note" style="grid-column:1/-1">Model alone: ${esc(ab(pred>=0?h:a))} by ${Math.abs(pred).toFixed(1)}. ${FIT.w===0 ? `Recent seasons give the model no weight against closing lines, so fair cover is the market's 50%.` : `At this size of edge the side covered ${bk.test.n?(100*bk.test.w/bk.test.n).toFixed(1)+'%':'n/a'} of ${bk.test.n} games in the 2025+ test years.`}</div></div>`);
   }
   if (kh!=null && ka!=null && pred!==null){
     const base = veg!==null ? veg : impliedMargin(kh/(kh+ka));  // market's margin, from the spread or else the Kalshi price
-    const bm = base + FIT.w*(pred-base), pH = normCdf(bm/FIT.sd);
-    const evH = pH/(kh/100)-1, evA = (1-pH)/(ka/100)-1, homeSide = evH>=evA;
-    const p = homeSide?pH:1-pH, c = (homeSide?kh:ka)/100, ev = homeSide?evH:evA, k = Math.max(0,(p-c)/(1-c))/4;
-    best = best===null ? ev : Math.max(best, ev);
-    bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><b>${esc(ab(homeSide?h:a))} ${(c*100).toFixed(0)}¢</b> ${sparkline(DATA.kmove&&DATA.kmove[gid], !homeSide)}</div><div class="note" style="text-align:right">pays $1</div>
-      <div class="fstats"><span>Fair win<b>${(p*100).toFixed(1)}%</b></span><span>EV<b style="color:${ev>=0?'var(--good)':'var(--bad)'}">${sgnPct(ev)}</b></span><span>¼ Kelly<b>${k>0?(k*100).toFixed(1)+'%':'none'}</b></span></div></div>`);
+    const bm = base + FIT.w*(pred-base), pH = winP(bm);
+    const stale = veg!==null && Math.abs(kh/(kh+ka) - winP(veg)) > 0.12;
+    const fee = c => 0.07*c*(1-c);  // Kalshi taker fee per $1 contract
+    const evH = pH/(kh/100+fee(kh/100))-1, evA = (1-pH)/(ka/100+fee(ka/100))-1, homeSide = evH>=evA;
+    const p = homeSide?pH:1-pH, c = (homeSide?kh:ka)/100, cf = c+fee(c), ev = homeSide?evH:evA, k = Math.max(0,(p-cf)/(1-cf))/4;
+    if (stale) bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><span class="note">${esc(ab(h))} ${kh}¢ / ${esc(ab(a))} ${ka}¢ doesn't match the books (${esc(ab(h))} about ${Math.round(winP(veg)*100)}%), likely a stale thinly traded price, so no EV shown.</span></div></div>`);
+    else { best = best===null ? ev : Math.max(best, ev);
+    bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><b>${esc(ab(homeSide?h:a))} ${(c*100).toFixed(0)}¢</b> ${sparkline(DATA.kmove&&DATA.kmove[gid], !homeSide)}</div><div class="note" style="text-align:right">pays $1, after fee</div>
+      <div class="fstats"><span>Fair win<b>${(p*100).toFixed(1)}%</b></span><span>EV<b style="color:${ev>=0?'var(--good)':'var(--bad)'}">${sgnPct(ev)}</b></span><span>¼ Kelly<b>${k>0?(k*100).toFixed(1)+'%':'none'}</b></span></div>
+      <div class="note" style="grid-column:1/-1">${veg!==null ? (FIT.w===0 ? `Fair win comes from the sportsbook spread, so any EV here means Kalshi is cheaper than the books, not that the model knows better.` : `Fair win blends the sportsbook spread with the model.`) : `No sportsbook line yet, so this leans on the model and Kalshi's own price.`}</div></div>`); }
   }
   const ins = [...insightsFor(h,a,g), ...insightsFor(a,h,g)].sort((x,y)=>y.z-x.z).slice(0,2);
   const insHtml = ins.map(i=>`<div class="fins"><div>${esc(i.text)}, ${i.avg>=0?'beating':'missing'} the line by ${Math.abs(i.avg).toFixed(1)} on average.</div>
@@ -1018,7 +1032,8 @@ function insightCard(ins, g){
   if (ins.mkt==='ou'){ const t = T[gid]; if (t==null) return null;
     return {bet: `${ins.w*2>=ins.n?'Over':'Under'} ${t}`, px:'−110', fair:''}; }
   if (ins.mkt==='su'){ if (kh==null||ka==null) return null; const c = ins.id===h ? kh : ka;
-    if (pred!==null){ const base = veg!==null ? veg : impliedMargin(kh/(kh+ka)), pH = normCdf((base+FIT.w*(pred-base))/FIT.sd);
+    if (veg!==null && Math.abs(kh/(kh+ka) - winP(veg)) > 0.12) return null;
+    if (pred!==null){ const base = veg!==null ? veg : impliedMargin(kh/(kh+ka)), pH = winP(base+FIT.w*(pred-base));
       fair = `fair ${((ins.id===h?pH:1-pH)*100).toFixed(1)}%`; }
     return {bet: `${esc(ab(ins.id))} to win`, px: `${c}¢`, fair}; }
   return null;
@@ -1059,9 +1074,9 @@ function renderFeed(){
   if (fsort==='ev') cards.sort((x,y)=>(y.ev??-9)-(x.ev??-9));
   if (fsort==='trend') cards.sort((x,y)=>y.z-x.z);
   const pos = cards.filter(c=>c.ev!==null && c.ev>0).length;
-  $('fsum').innerHTML = `${cards.length} upcoming game${cards.length===1?'':'s'}, ${pos} with a positive EV side. Fair odds keep ${(FIT.w*100).toFixed(0)}% of the model's disagreement with the market line, the share that predicted results best on 2008 to 2024, so they sit close to the market on purpose.`;
+  $('fsum').innerHTML = `${cards.length} upcoming game${cards.length===1?'':'s'}, ${pos} with a positive EV side. Fair odds keep ${(FIT.w*100).toFixed(0)}% of the model's disagreement with the market line, the share that predicted results best over the last 5 seasons (${FIT_FROM} on). That share has been near zero since about 2016: closing lines already price in what this model knows, so expect few or no real edges here.`;
   $('feed').innerHTML = cards.map(c=>c.html).join('') || '<div class="empty">No upcoming games in this range.</div>';
-  $('fnote').innerHTML = `Honest caveat: in the 2025+ test years, no size of model disagreement with the closing line has covered more than the 52.4% you need at −110. Positive EV here is a lean, not a proven edge. Kalshi EV is before fees. Trends only use games before kickoff; tap a matchup for the full line history.`;
+  $('fnote').innerHTML = `Honest caveat: against closing lines this model has shown no edge in recent seasons, so a positive EV here is a lean at best. The more promising question is whether it beats opening lines, which haven't been tested yet. Kalshi EV is before fees. Trends only use games before kickoff; tap a matchup for the full line history.`;
 }
 $('fsort').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; fsort=b.dataset.sort;
   document.querySelectorAll('#fsort .chip').forEach(c=>c.setAttribute('aria-pressed', c===b)); renderFeed(); });

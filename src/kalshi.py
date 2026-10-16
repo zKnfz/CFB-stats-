@@ -83,7 +83,8 @@ def main():
                 break
             bid, ask = float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"])
             vol, last = float(m["volume_24h_fp"]), float(m["last_price_dollars"])
-            pct = last * 100 if vol > 0 and last > 0 else (bid + ask) / 2 * 100
+            # a live two sided quote beats the last trade, which can be hours stale on thin markets
+            pct = (bid + ask) / 2 * 100 if bid > 0 and ask < 1 and ask - bid <= 0.10 else (last * 100 if vol > 0 and last > 0 else (bid + ask) / 2 * 100)
             teams[name] = round(pct, 1)
             vols[name] = vol
         if not ok or len(teams) != 2:
