@@ -55,6 +55,15 @@ for y in range(2004, 2027):
         "rows": [[a,int(b),int(c),int(d_),int(e),int(f),round(float(g),3),int(h),int(i),round(float(j),3),int(k),round(float(l),3),int(m),int(nn),round(float(oo),3),int(pp)]
                  for a,b,c,d_,e,f,g,h,i,j,k,l,m,nn,oo,pp in Rr[cols].itertuples(index=False)],
         "games": {int(g.game_id): [g.date,int(g.home_id),int(g.away_id),int(g.home_score),int(g.away_score),bool(g.neutral_site),int(g.season_type),int(g.week)] for g in games.itertuples()}}
+# each season's end of season ratings (season to date for the current one), same prior as the page uses:
+# rating, adj off EPA, adj def EPA. Used to describe opponent strength in history, so it is hindsight by design.
+out["final"] = {}
+for y in sorted(D):
+    ids = sorted(D[y][2].team_id); pri = final_prior(y, ids, SHRINK); r = R[y]; v = {}
+    for f in set(MF) | {"E"}:
+        num, wc = FEATS[f]; o, d_, mu, h = ridge(r, ids, num, wc, LAMS[f], None if pri is None else pri[f]); v[f] = (o, d_, mu)
+    rating = sum(b * (v[f][0] - v[f][1]) for f, b in zip(MF, beta[:3]))
+    out["final"][y] = {int(t): [round(float(rating[i]), 2), round(float(v["E"][2] + v["E"][0][i]), 4), round(float(v["E"][2] + v["E"][1][i]), 4)] for i, t in enumerate(ids)}
 json.dump(out, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
 # python reference for 2026 with prior, to check the browser
 y=2026; ids=sorted(D[y][2].team_id); pri=final_prior(y, ids, SHRINK); r=R[y]

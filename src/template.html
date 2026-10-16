@@ -208,6 +208,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
     <button role="tab" id="tab-ratings" aria-selected="false">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
     <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
+    <button role="tab" id="tab-tf" aria-selected="false">Trend Finder</button>
     <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
     <button role="tab" id="tab-game" aria-selected="false" hidden>Game</button>
     <button role="tab" id="tab-team" aria-selected="false" hidden>Team</button>
@@ -309,6 +310,39 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
     <p class="note" id="fnote"></p>
   </section>
 
+  <section id="p-tf" hidden>
+    <div class="panel">
+      <div class="fgrid" id="tff">
+        <div class="field"><label for="tf-team">Team</label><input type="text" id="tf-team" list="teamlist" placeholder="Any team"></div>
+        <div class="field"><label for="tf-opp">Opponent</label><input type="text" id="tf-opp" list="teamlist" placeholder="Any opponent"></div>
+        <div class="field"><span class="lbl">Seasons</span><div class="rng"><select id="tf-y0"></select><select id="tf-y1"></select></div></div>
+        <div class="field"><span class="lbl">Dates (optional)</span><div class="rng"><input type="date" id="tf-d0"><input type="date" id="tf-d1"></div></div>
+        <div class="field"><label for="tf-site">Site</label><select id="tf-site"><option value="">Any</option><option value="home">Home</option><option value="away">Away</option><option value="neu">Neutral</option></select></div>
+        <div class="field"><label for="tf-conf">Conference game</label><select id="tf-conf"><option value="">Any</option><option value="y">Yes</option><option value="n">No</option></select></div>
+        <div class="field"><label for="tf-role">Fav / dog</label><select id="tf-role"><option value="">Any</option><option value="fav">Favorite</option><option value="dog">Underdog</option></select></div>
+        <div class="field"><span class="lbl">Spread (team)</span><div class="rng"><input type="number" id="tf-s0" step="0.5" placeholder="min"><input type="number" id="tf-s1" step="0.5" placeholder="max"></div></div>
+        <div class="field"><span class="lbl">Total</span><div class="rng"><input type="number" id="tf-t0" step="0.5" placeholder="min"><input type="number" id="tf-t1" step="0.5" placeholder="max"></div></div>
+        <div class="field"><label for="tf-ork">Opponent T-Rank</label><select id="tf-ork"><option value="">Any</option><option value="10">Top 10</option><option value="25">Top 25</option><option value="u">Unranked (26+)</option></select></div>
+        <div class="field"><span class="lbl">Opp rating</span><div class="rng"><input type="number" id="tf-r0" step="1" placeholder="min"><input type="number" id="tf-r1" step="1" placeholder="max"></div></div>
+        <div class="field"><label for="tf-ooff">Opp offense rank ≤</label><input type="number" id="tf-ooff" min="1" step="1" placeholder="any"></div>
+        <div class="field"><label for="tf-odef">Opp defense rank ≤</label><input type="number" id="tf-odef" min="1" step="1" placeholder="any"></div>
+        <div class="field"><span class="lbl">Opp SOS</span><div class="rng"><input type="number" id="tf-q0" step="1" placeholder="min"><input type="number" id="tf-q1" step="1" placeholder="max"></div></div>
+        <div class="field"><label for="tf-prev">Previous game</label><select id="tf-prev"><option value="">Any</option><option value="W">Won</option><option value="L">Lost</option></select></div>
+        <div class="field"><label for="tf-rest">Rest</label><select id="tf-rest"><option value="">Any</option><option value="bye">Off a bye (13+ days)</option><option value="short">Short week (6 or fewer)</option><option value="norm">Normal (7 to 12)</option></select></div>
+        <div class="field"><label for="tf-model">Model pregame pick</label><select id="tf-model"><option value="">Any</option><option value="like">Liked this team vs the line</option><option value="fade">Faded this team</option></select></div>
+        <div class="field"><button class="btn" id="tf-reset" type="button">Reset</button></div>
+        <div class="field"><button class="btn" id="tf-ex" type="button">Example query</button></div>
+      </div>
+    </div>
+    <div class="kgrid" id="tf-sum"></div>
+    <p class="note" id="tf-note"></p>
+    <div class="tablebox fbox" style="margin-top:10px"><table class="tlog" id="tf-t"><thead><tr>
+      <th class="l">Date</th><th class="l">Team</th><th class="l">Site</th><th class="l">Opponent</th><th class="l">Result</th><th title="Closing spread, team's side">Spread</th><th>ATS</th><th title="Closing total">Total</th><th>O/U</th>
+      <th title="How many points the pregame model liked this team by, beyond the closing line">Model edge</th><th title="Days since the previous game">Rest</th><th title="Previous game result">Prev</th><th></th>
+    </tr></thead><tbody></tbody></table></div>
+    <div style="margin-top:8px"><button class="btn" id="tf-more" type="button" hidden>Show more</button></div>
+  </section>
+
   <section id="p-matchup" hidden>
     <div class="panel">
       <div class="mu-grid">
@@ -386,7 +420,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
-const TABS = ['finder','ratings','games','feed','matchup','game','team','backtest','about'];
+const TABS = ['finder','ratings','games','feed','tf','matchup','game','team','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -636,8 +670,20 @@ function teamLog(id, before){  // one team's lined games, from that team's side
             cover: Math.sign(margin-exp)};
   }).sort((x,y)=>x.date<y.date?-1:1);
 }
-// opponent strength: final T-Rank for past seasons (season N+1's prior is season N's final ratings), current T-Rank for this one
-const FINALRANK = (()=>{ const out = {}, B = P.beta;
+// each season's end of season ratings (DATA.final, season to date for the current one), with ranks and SOS.
+// Describing history with these is hindsight: they include games after the one being looked at.
+const FINAL = (()=>{ const out = {};
+  for (const y of SEASONS){ const f = (DATA.final||{})[y]; if (!f) continue;
+    const ents = Object.entries(f).map(([id,v])=>({id:+id, rating:v[0], off:v[1], def:v[2], opps:[]}));
+    const rk = (key, dir) => [...ents].sort((a,b)=>dir*((b[key]??-1e9*dir)-(a[key]??-1e9*dir))).forEach((e,i)=>e[key+'Rk']=e[key]==null?null:i+1);
+    rk('rating',1); rk('off',1); rk('def',-1); out[y] = {ents, m: new Map(ents.map(e=>[e.id,e])), rk}; }
+  for (const g of DATA.games){ if (g[6]===null) continue; const o = out[seasonOf(g[1])]; if (!o) continue;
+    const h = o.m.get(g[3]), a = o.m.get(g[4]); if (h && a){ h.opps.push(a.rating); a.opps.push(h.rating); } }
+  for (const y in out){ const o = out[y]; o.ents.forEach(e=>{ e.sos = e.opps.length ? e.opps.reduce((s,x)=>s+x,0)/e.opps.length : null; delete e.opps; }); o.rk('sos',1); out[y] = o.m; }
+  return out; })();
+// opponent strength: final T-Rank for past seasons, current T-Rank for this one. Falls back to rebuilding past
+// seasons from the next season's prior when the page has no DATA.final (older builds).
+const FINALRANK = DATA.final ? Object.fromEntries(Object.entries(FINAL).map(([y,m])=>[y, new Map([...m].map(([id,e])=>[id,e.ratingRk]))])) : (()=>{ const out = {}, B = P.beta;
   for (let i=0;i<SEASONS.length-1;i++){ const pr = DATA.seasons[SEASONS[i+1]].prior||{};
     const r = Object.entries(pr).map(([id,f])=>[+id, Object.keys(B).reduce((t,k)=>t+B[k]*(f[k][0]-f[k][1]),0)]).sort((a,b)=>b[1]-a[1]);
     out[SEASONS[i]] = new Map(r.map(([id],j)=>[id,j+1])); }
@@ -1568,6 +1614,91 @@ $('gsearch').addEventListener('change', e=>{ const q = e.target.value.trim().toL
   const ids = Object.keys(DATA.teams).map(Number), hit = ids.find(i=>nm(i).toLowerCase()===q) ?? ids.find(i=>nm(i).toLowerCase().startsWith(q)) ?? ids.find(i=>nm(i).toLowerCase().includes(q));
   if (hit!=null){ openTeam(hit); e.target.value = ''; e.target.blur(); } });
 
+// ---------- Trend Finder: historical queries over every finished game, from each team's side ----------
+let TFS = null, tfShown = 200;
+function tfSides(){
+  if (TFS) return TFS; TFS = []; const T = DATA.tot||{}, last = new Map();
+  const gs = DATA.games.filter(g=>g[6]!==null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:a[0]-b[0]);
+  for (const g of gs){ const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, y = seasonOf(date), cf = (DATA.seasons[y]||{}).conf||{}, F = FINAL[y];
+    for (const [id,opp,home] of [[h,a,true],[a,h,false]]){
+      const us = home?hs:as, them = home?as:hs, spread = veg==null?null:(home?-veg:veg), tot = T[gid] ?? null, prev = last.get(id);
+      const rest = prev ? Math.round((new Date(date)-new Date(prev.date))/864e5) : null, of = F && F.get(opp);
+      TFS.push({g, gid, date, y:+y, id, opp, home, neu, us, them, spread, tot,
+        confGame: !!cf[id] && cf[id]===cf[opp] && !/independent/i.test(cf[id]),
+        oppRating: of?of.rating:null, oppRk: of?of.ratingRk:null, oppOffRk: of?of.offRk:null, oppDefRk: of?of.defRk:null, oppSos: of?of.sos:null,
+        prev: prev && rest<60 ? (prev.m>0?'W':'L') : null, rest: prev && rest<60 ? rest : null,
+        cover: spread==null?null:Math.sign(us-them+spread), ou: tot==null?null:Math.sign(us+them-tot),
+        modelEdge: pred!=null && veg!=null ? (home ? pred-veg : veg-pred) : null }); }
+    last.set(h, {date, m:hs-as}); last.set(a, {date, m:as-hs}); }
+  return TFS;
+}
+const teamByName = q => { q = (q||'').trim().toLowerCase(); if (!q) return null; const ids = Object.keys(DATA.teams).map(Number);
+  return ids.find(i=>nm(i).toLowerCase()===q) ?? ids.find(i=>nm(i).toLowerCase().startsWith(q)) ?? -1; };
+function tfQuery(){
+  const v = id => $(id).value, n = id => { const x = parseFloat($(id).value); return isNaN(x) ? null : x; };
+  const team = teamByName(v('tf-team')), opp = teamByName(v('tf-opp')), y0 = +v('tf-y0'), y1 = +v('tf-y1'), d0 = v('tf-d0'), d1 = v('tf-d1');
+  const [s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef] = ['tf-s0','tf-s1','tf-t0','tf-t1','tf-r0','tf-r1','tf-q0','tf-q1','tf-ooff','tf-odef'].map(n);
+  const site = v('tf-site'), conf = v('tf-conf'), role = v('tf-role'), ork = v('tf-ork'), prev = v('tf-prev'), rest = v('tf-rest'), model = v('tf-model');
+  const rows = tfSides().filter(x=>{
+    if (team===-1 || opp===-1) return false; if (team!=null && x.id!==team) return false; if (opp!=null && x.opp!==opp) return false;
+    if (x.y<y0 || x.y>y1) return false; if (d0 && x.date<d0) return false; if (d1 && x.date>d1) return false;
+    if (site==='home' && !(x.home&&!x.neu)) return false; if (site==='away' && (x.home||x.neu)) return false; if (site==='neu' && !x.neu) return false;
+    if (conf==='y' && !x.confGame) return false; if (conf==='n' && x.confGame) return false;
+    if (role==='fav' && !(x.spread!=null && x.spread<0)) return false; if (role==='dog' && !(x.spread!=null && x.spread>0)) return false;
+    if ((s0!=null||s1!=null) && x.spread==null) return false; if (s0!=null && x.spread<s0) return false; if (s1!=null && x.spread>s1) return false;
+    if ((t0!=null||t1!=null) && x.tot==null) return false; if (t0!=null && x.tot<t0) return false; if (t1!=null && x.tot>t1) return false;
+    if (ork && x.oppRk==null) return false; if (ork==='10' && x.oppRk>10) return false; if (ork==='25' && x.oppRk>25) return false; if (ork==='u' && x.oppRk<=25) return false;
+    if ((r0!=null||r1!=null) && x.oppRating==null) return false; if (r0!=null && x.oppRating<r0) return false; if (r1!=null && x.oppRating>r1) return false;
+    if (ooff!=null && !(x.oppOffRk!=null && x.oppOffRk<=ooff)) return false; if (odef!=null && !(x.oppDefRk!=null && x.oppDefRk<=odef)) return false;
+    if ((q0!=null||q1!=null) && x.oppSos==null) return false; if (q0!=null && x.oppSos<q0) return false; if (q1!=null && x.oppSos>q1) return false;
+    if (prev && x.prev!==prev) return false;
+    if (rest==='bye' && !(x.rest!=null && x.rest>=13)) return false; if (rest==='short' && !(x.rest!=null && x.rest<=6)) return false; if (rest==='norm' && !(x.rest!=null && x.rest>=7 && x.rest<=12)) return false;
+    if (model==='like' && !(x.modelEdge!=null && x.modelEdge>0)) return false; if (model==='fade' && !(x.modelEdge!=null && x.modelEdge<0)) return false;
+    return true; });
+  return {rows, team, opp};
+}
+function renderTF(){
+  const {rows, team, opp} = tfQuery();
+  const su = rate(rows, x=>x.us-x.them), at = rate(rows.filter(x=>x.cover!=null), x=>x.cover), ou = rate(rows.filter(x=>x.ou!=null), x=>x.ou);
+  const md = rate(rows.filter(x=>x.modelEdge!=null && x.modelEdge!==0 && x.cover!=null), x=>x.cover*Math.sign(x.modelEdge));
+  const avg = l => l.length ? l.reduce((a,b)=>a+b,0)/l.length : null;
+  const am = avg(rows.map(x=>x.us-x.them)), aa = avg(rows.filter(x=>x.spread!=null).map(x=>x.us-x.them+x.spread));
+  const pc = r => r.n ? ` <span class="note">${(100*r.w/r.n).toFixed(1)}%</span>` : '';
+  const ci = r => { if (!r.n) return ''; const [lo,hi] = wilsonCI(r.w, r.n); return `95% range ${(lo*100).toFixed(0)} to ${(hi*100).toFixed(0)}%`; };
+  const key = (lbl, src, val, sub) => `<div><div class="k">${lbl} <span class="src ${src}">${{k:'MARKET',m:'MODEL',h:'HIST',d:'DERIVED'}[src]}</span></div><b>${val}</b>${sub?`<div class="s">${sub}</div>`:''}</div>`;
+  $('tf-sum').innerHTML = (team===-1||opp===-1) ? `<div><b class="na">No team by that name</b></div>` :
+    key('Games matching','h', rows.length.toLocaleString(), team==null ? 'each game counted from both sides' : '')
+    + key('Straight up','h', su.n?`${su.w}-${su.l}`:'<span class="na">N/A</span>', su.n?`${(100*su.w/su.n).toFixed(1)}% wins`:'')
+    + key('ATS','h', at.n?`${at.w}-${at.l}${at.p?'-'+at.p:''}${pc(at)}`:'<span class="na">N/A</span>', at.n?`${ci(at)}, ${at.n+at.p} with a line`:'no closing lines')
+    + key('O/U','h', ou.n?`${ou.w}-${ou.l}${ou.p?'-'+ou.p:''}${pc(ou)}`:'<span class="na">N/A</span>', ou.n?`over rate, ${ci(ou)}`:'totals since 2013')
+    + key('Avg margin','h', naTxt(am, f1), '')
+    + key('Avg ATS margin','d', naTxt(aa, f1), 'margin plus spread')
+    + key('Model picks','m', md.n?`${md.w}-${md.l}${pc(md)}`:'<span class="na">N/A</span>', md.n?`model side vs the line, pregame, ${ci(md)}`:'');
+  $('tf-note').innerHTML = `Every number above comes from the ${rows.length.toLocaleString()} games listed below. Opponent rank, rating, offense and defense rank and SOS use each season's final T-Rank (season to date for ${SEASONS[SEASONS.length-1]}), so they're hindsight: fine for describing what happened, not proof a pregame strategy works. Model picks only used games before each one. Pushes don't count toward percentages. Break even against the spread at −110 is 52.4%.`;
+  const sorted = [...rows].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  $('tf-t').querySelector('tbody').innerHTML = sorted.length ? sorted.slice(0, tfShown).map(x=>`<tr>
+    <td class="l">${fmtDate(x.date)}</td><td class="l">${teamLinkHtml(x.id)}</td><td class="l">${x.neu?'N':x.home?'H':'A'}</td>
+    <td class="l">${teamLinkHtml(x.opp)}${x.oppRk?` <span class="r">#${x.oppRk}</span>`:''}</td>
+    <td class="l"><span class="${x.us>x.them?'W':'L'}">${x.us>x.them?'W':'L'}</span> ${x.us}-${x.them}</td>
+    <td>${x.spread==null?'<span class="na">N/A</span>':spreadTxt(x.spread)}</td><td class="${x.cover>0?'W':x.cover<0?'L':''}">${x.cover==null?'':x.cover>0?'Cover':x.cover<0?'Miss':'Push'}</td>
+    <td>${naTxt(x.tot, v=>v.toFixed(1))}</td><td>${x.ou==null?'':x.ou>0?'Over':x.ou<0?'Under':'Push'}</td>
+    <td>${x.modelEdge==null?'<span class="na">N/A</span>':f1(x.modelEdge)}</td><td>${x.rest??''}</td><td>${x.prev??''}</td>
+    <td><span class="tmlink glink" data-gid="${x.gid}" tabindex="0" role="link">Research ›</span></td></tr>`).join('')
+    : '<tr><td colspan="13" class="empty">No games match. Widen the filters or tap Reset.</td></tr>';
+  $('tf-more').hidden = sorted.length <= tfShown; $('tf-more').textContent = `Show more (${(sorted.length - tfShown).toLocaleString()} left)`;
+}
+function tfInit(){
+  const ys = SEASONS.map(y=>`<option>${y}</option>`).join(''); $('tf-y0').innerHTML = ys; $('tf-y1').innerHTML = ys;
+  const reset = () => { $('tff').querySelectorAll('input,select').forEach(el=>{ if (el.tagName==='SELECT') el.selectedIndex=0; else el.value=''; });
+    $('tf-y0').value = SEASONS[0]; $('tf-y1').value = SEASONS[SEASONS.length-1]; tfShown = 200; };
+  reset();
+  $('tff').addEventListener('change', ()=>{ tfShown = 200; renderTF(); });
+  $('tf-reset').addEventListener('click', ()=>{ reset(); renderTF(); });
+  $('tf-ex').addEventListener('click', ()=>{ reset(); $('tf-team').value = 'Indiana'; $('tf-site').value = 'home'; $('tf-ork').value = '25';
+    $('tf-y0').value = '2018'; renderTF(); });
+  $('tf-more').addEventListener('click', ()=>{ tfShown += 200; renderTF(); });
+}
+
 // ---------- Game Finder ----------
 const FX = {sort:'date', dir:1};
 const FX_DEFAULT = () => ({'fx-from': todayET(), 'fx-to': addDays(todayET(), 7)});
@@ -1687,7 +1818,8 @@ function syncControls(){
   $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
 }
 function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
-function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; } }
+function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; }
+  if (t==='tf' && !TFS) renderTF(); }
 // one handler for team and game links anywhere on the page
 function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
@@ -1769,7 +1901,7 @@ document.querySelector('nav.tabs').addEventListener('click', e=>{
   $('season').innerHTML = [...SEASONS].reverse().map(y=>`<option value="${y}">${y}</option>`).join('') + `<option value="last3">Last 3 seasons</option><option value="all">All seasons (${SEASONS[0]} to ${SEASONS[SEASONS.length-1]})</option>`;
   $('season').value=state.season; $('prior').checked=state.prior;
   $('teamlist').innerHTML = [...new Set(SEASONS.slice(-3).flatMap(y=>DATA.seasons[y].teams))].map(id=>`<option value="${esc(nm(id))}">`).join('');
-  finderInit();
+  finderInit(); tfInit();
   applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames(); renderFeed(); renderBacktest(); route();
 })();
 </script>
