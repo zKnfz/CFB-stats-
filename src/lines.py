@@ -1,7 +1,8 @@
 """Sportsbook lines from CollegeFootballData's /lines endpoint.
 
 Keeps data/lines_hist.json (committed): {season: {game_id: [close_home_margin, open_home_margin,
-total, open_total]}}, nulls where a book didn't post one. Past seasons are fetched once and then
+total, open_total, home_moneyline, away_moneyline]}}, nulls where a book didn't post one (seasons
+cached before moneylines were added have only the first four). Past seasons are fetched once and then
 reused; only the current season is refetched each run (2 calls), since CFBD's free tier caps calls.
 
 Then, in site_data.json:
@@ -9,6 +10,7 @@ Then, in site_data.json:
     ESPN data only has for finished games
   - 'lineopen': {gid: opening home margin} for upcoming games
   - 'tot': {gid: total} for every game with a posted total, for over/under trends
+  - 'ml': {gid: [home American odds, away American odds]} where a book posted a moneyline
 Needs CFBD_API_KEY to refresh; without it the cached history is still applied.
 CFBD game ids are ESPN ids, same as ours. Run after export3.py, before kalshi.py.
 """
@@ -55,15 +57,17 @@ def fetch_season(y):
     for st in ("regular", "postseason"):
         for row in cfbd_get("/lines", year=y, seasonType=st):
             lines = row.get("lines") or []
-            s, t = pick(lines, "spread"), pick(lines, "overUnder")
-            if s is None and t is None:
+            s, t, m = pick(lines, "spread"), pick(lines, "overUnder"), pick(lines, "homeMoneyline")
+            if s is None and t is None and m is None:
                 continue
             # CFBD spread is the home side's number (negative = home favored), so home margin is its negative
             close = -num(s["spread"]) if s else None
             opn = -num(s.get("spreadOpen")) if s and num(s.get("spreadOpen")) is not None else None
             tot = num(t["overUnder"]) if t else None
             topn = num(t.get("overUnderOpen")) if t else None
-            out[str(row["id"])] = [close, opn, tot, topn]
+            hml = num(m.get("homeMoneyline")) if m else None
+            aml = num(m.get("awayMoneyline")) if m else None
+            out[str(row["id"])] = [close, opn, tot, topn, hml, aml]
             if s and len(samples) < 2:
                 samples.append((row.get("homeTeam"), row.get("awayTeam"), s.get("spread"), s.get("formattedSpread"), tot))
     return out, samples
@@ -89,12 +93,14 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     flat = {int(g): v for season in hist.values() for g, v in season.items()}
     filled = 0
-    site['lineopen'], site['tot'] = {}, {}
+    site['lineopen'], site['tot'], site['ml'] = {}, {}, {}
     for g in site['games']:
         v = flat.get(g[0])
         if not v:
             continue
-        close, opn, tot, _ = v
+        close, opn, tot = v[0], v[1], v[2]
+        if len(v) >= 6 and v[4] is not None and v[5] is not None:
+            site['ml'][str(g[0])] = [v[4], v[5]]
         if g[6] is None:
             if close is not None:
                 g[9] = close
@@ -105,7 +111,7 @@ def main():
             site['tot'][str(g[0])] = tot
     up = sum(1 for g in site['games'] if g[6] is None)
     print(f"filled spreads for {filled} of {up} upcoming games, {len(site['lineopen'])} with an opening line, "
-          f"totals for {len(site['tot'])} games")
+          f"totals for {len(site['tot'])} games, moneylines for {len(site['ml'])}")
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 

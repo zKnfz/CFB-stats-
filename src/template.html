@@ -1,3 +1,7 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gridiron T-Rank</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
@@ -31,6 +35,7 @@ h1 span{color:var(--accent)}
 .field label,.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 select,input[type=date],input[type=number]{font:500 14px var(--data);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-height:34px}
 input[type=number]{width:90px}
+select,input[type=date],input[type=number],input[type=text],input[type=search]{box-sizing:border-box;height:36px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font:600 13px var(--data);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
@@ -138,6 +143,28 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .badge.no{background:var(--bad-bg);color:var(--bad)}
 .badge.up{background:var(--accent-soft);color:var(--muted)}
 @media (prefers-reduced-motion:no-preference){tbody tr.team td{transition:background .12s}}
+/* research terminal: dense tables, sticky headers, heat cells */
+.fbox{max-height:72vh;overflow:auto}
+.fbox th{top:0;z-index:3}
+.fbox thead tr.grp th{font-size:10px;letter-spacing:.1em;border-bottom:1px solid var(--line);cursor:default;padding:4px 8px;text-align:center}
+.fbox thead tr.cols th{top:22px}
+.fbox td.stick,.fbox th.stick{position:sticky;left:0;background:var(--panel);z-index:2}
+.fbox thead th.stick{z-index:4}
+.fbox tbody tr:hover td{background:var(--accent-soft)}
+.fbox tbody tr.alt td{background:color-mix(in srgb,var(--bg) 55%,var(--panel))}
+.fbox tbody tr.alt:hover td{background:var(--accent-soft)}
+.fbox td{font-size:13px;padding:5px 7px}
+.na{color:var(--muted);opacity:.7}
+.hg2{background:var(--good-bg);color:var(--good);font-weight:700}.hg1{color:var(--good);font-weight:600}
+.hr2{background:var(--bad-bg);color:var(--bad);font-weight:700}.hr1{color:var(--bad);font-weight:600}
+.src{display:inline-block;font:700 9px var(--data);letter-spacing:.08em;border-radius:3px;padding:0 4px;vertical-align:1px}
+.src.m{background:var(--accent-soft);color:var(--accent)}.src.k{background:var(--line);color:var(--ink)}.src.h{background:var(--line);color:var(--muted)}.src.d{border:1px solid var(--line);color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px 12px;align-items:end}
+.fgrid input[type=number]{width:100%}.fgrid select,.fgrid input[type=text],.fgrid input[type=date]{width:100%}
+input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-height:34px}
+.rng{display:flex;gap:4px}.rng input{min-width:0}
+.btn{font:600 13px var(--data);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:4px;padding:6px 12px;cursor:pointer;min-height:34px}
+.btn:hover{border-color:var(--accent)}
 </style>
 
 <div class="wrap">
@@ -161,7 +188,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
   </section>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" id="tab-ratings" aria-selected="true">Ratings</button>
+    <button role="tab" id="tab-finder" aria-selected="true">Game Finder</button>
+    <button role="tab" id="tab-ratings" aria-selected="false">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
     <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
     <button role="tab" id="tab-matchup" aria-selected="false">Matchup</button>
@@ -169,7 +197,32 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
     <button role="tab" id="tab-about" aria-selected="false">Method</button>
   </nav>
 
-  <section id="p-ratings">
+  <section id="p-finder">
+    <div class="panel">
+      <div class="fgrid" id="ffilters">
+        <div class="field"><label for="fx-from">From</label><input type="date" id="fx-from"></div>
+        <div class="field"><label for="fx-to">To</label><input type="date" id="fx-to"></div>
+        <div class="field"><label for="fx-conf">Conference</label><select id="fx-conf"></select></div>
+        <div class="field"><label for="fx-team">Team</label><input type="text" id="fx-team" list="teamlist" placeholder="Any team"></div>
+        <div class="field"><label for="fx-role">Fav / dog</label><select id="fx-role"><option value="">Either</option><option value="fav">Favorite</option><option value="dog">Underdog</option></select></div>
+        <div class="field"><label for="fx-site">Site</label><select id="fx-site"><option value="">Any</option><option value="home">Home</option><option value="away">Away</option><option value="neu">Neutral</option></select></div>
+        <div class="field"><span class="lbl">Spread (team)</span><div class="rng"><input type="number" id="fx-smin" step="0.5" placeholder="min"><input type="number" id="fx-smax" step="0.5" placeholder="max"></div></div>
+        <div class="field"><span class="lbl">Total</span><div class="rng"><input type="number" id="fx-tmin" step="0.5" placeholder="min"><input type="number" id="fx-tmax" step="0.5" placeholder="max"></div></div>
+        <div class="field"><label for="fx-edge">Min spread edge</label><input type="number" id="fx-edge" step="0.5" min="0" placeholder="pts"></div>
+        <div class="field"><label for="fx-tedge">Min total edge</label><input type="number" id="fx-tedge" step="0.5" min="0" placeholder="pts"></div>
+        <div class="field"><label for="fx-rank">T-Rank</label><select id="fx-rank"><option value="">Any</option><option value="r">Top 25</option><option value="u">Unranked</option><option value="o">Opponent top 25</option></select></div>
+        <div class="field"><span class="lbl">Team rating</span><div class="rng"><input type="number" id="fx-rmin" step="1" placeholder="min"><input type="number" id="fx-rmax" step="1" placeholder="max"></div></div>
+        <div class="field"><span class="lbl">SOS</span><div class="rng"><input type="number" id="fx-qmin" step="1" placeholder="min"><input type="number" id="fx-qmax" step="1" placeholder="max"></div></div>
+        <div class="field"><label for="fx-rows">Rows</label><select id="fx-rows"><option value="both">Both teams</option><option value="model">Model's side only</option></select></div>
+        <div class="field"><button class="btn" id="fx-reset" type="button">Reset filters</button></div>
+      </div>
+      <p class="note" id="fx-sum" style="margin:10px 0 0"></p>
+    </div>
+    <div class="tablebox fbox" style="margin-top:10px"><table id="ft"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="fx-note"></p>
+  </section>
+
+  <section id="p-ratings" hidden>
     <p class="note" id="rnote"></p>
     <div class="tablebox"><table id="rt"><thead><tr>
       <th class="l" data-k="rk">Rk</th>
@@ -307,11 +360,12 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
   </section>
 </div>
 
+<datalist id="teamlist"></datalist>
 <script id="data" type="application/json">__DATA__</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
-const TABS = ['ratings','games','feed','matchup','backtest','about'];
+const TABS = ['finder','ratings','games','feed','matchup','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -401,9 +455,13 @@ function compute(){
       t.games.push({date, opp:o, loc, ms, os, offE:ro.epa/ro.plays, defE:rd.epa/rd.plays, g:gs});
     }
   }
-  teams.forEach(t=>{ t.pace=t.gp?t.plays/t.gp:0; t.passr=t.plays?t.pp/t.plays:0; t.tom=t.gp?(t.take-t.give)/t.gp:0; t.games.sort((a,b)=>a.date<b.date?-1:1); });
-  const rank = (key,dir)=>[...teams].sort((a,b)=>dir*(b[key]-a[key])).forEach((t,i)=>t[key+'Rk']=i+1);
+  teams.forEach(t=>{ t.pace=t.gp?t.plays/t.gp:0; t.passr=t.plays?t.pp/t.plays:0; t.tom=t.gp?(t.take-t.give)/t.gp:0; t.games.sort((a,b)=>a.date<b.date?-1:1);
+    // strength of schedule: average current rating of opponents faced in range. form: average G-Score, last 3 games
+    t.sos = t.games.length ? t.games.reduce((s,g)=>s+g.opp.rating,0)/t.games.length : null;
+    const l3 = t.games.slice(-3); t.form = l3.length ? l3.reduce((s,g)=>s+g.g,0)/l3.length : null; });
+  const rank = (key,dir)=>[...teams].sort((a,b)=>dir*((b[key]??-1e9*dir)-(a[key]??-1e9*dir))).forEach((t,i)=>t[key+'Rk']=t[key]==null?null:i+1);
   rank('rating',1); rank('adjO',1); rank('adjD',-1); rank('srO',1); rank('srD',-1); rank('exO',1); rank('exD',-1); rank('ptsO',1); rank('ptsD',-1);
+  rank('sos',1); rank('form',1);
   current = {teams, byId, nRows:rows.length, nGames:seen.size, multi: inRange.length>1, priorYear: +seasonOf(state.from)-1,
     thin: inRange.filter(y=>DATA.coverage[y]<0.95), hasPrior: Object.keys(priorSeason.prior).length>0};
 }
@@ -820,6 +878,7 @@ function seasonGames(d){ const y=seasonOf(d); const [lo,hi]=[ALL.span[y][0], y==
 function gameEdge(g){
   const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g;
   if (pred===null || kh==null || ka==null) return null;
+  if (veg!=null && Math.abs(kh/(kh+ka) - winP(veg)) > 0.12) return null;  // stale price on a thin market, see Trends
   const sd = mingp===0 ? P.sd_early : P.sd;
   const favH = pred>=0;
   const wpFav = normCdf(Math.abs(pred)/sd) * 100;
@@ -1186,6 +1245,159 @@ $('frange').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if
 $('feed').addEventListener('click', e=>{ const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
 $('feed').addEventListener('keydown', e=>{ if(e.key!=='Enter') return; const el=e.target.closest('.tmlink'); if(el) tmlinkGo(el); });
 
+// ---------- research data layer: pure calculations, no DOM ----------
+// Source of every number: MARKET (books via CFBD, or Kalshi), MODEL (this site's pregame projection),
+// HISTORICAL (finished games), DERIVED (computed from the others). Missing market data stays null, never estimated.
+const amProb = o => o<0 ? -o/(-o+100) : 100/(o+100);
+const amTxt = o => o==null ? null : (o>0?'+':'')+Math.round(o);
+const sdFor = g => g[10]===0 ? P.sd_early : P.sd;
+function rate(list, f){ let w=0,l=0,p=0; for (const x of list){ const v=f(x); v>0?w++:v<0?l++:p++; } return {w,l,p,n:w+l}; }
+const PROF = new Map();  // per team, per cutoff date; betting history only uses games finished before that date
+function teamProfile(id, before){
+  const key = id+'|'+before; if (PROF.has(key)) return PROF.get(key);
+  const y = seasonOf(before), sinceY = ALL.span[y][0];
+  const ats = teamLog(id, before), ou = teamTotLog(id, before);
+  const sea = ats.filter(x=>x.date>=sinceY), ouSea = ou.filter(x=>x.date>=sinceY);
+  const pr = {
+    atsSeason: rate(sea, x=>x.cover), atsL5: rate(ats.slice(-5), x=>x.cover), atsL10: rate(ats.slice(-10), x=>x.cover),
+    atsHome: rate(sea.filter(x=>x.home&&!x.neu), x=>x.cover), atsAway: rate(sea.filter(x=>!x.home&&!x.neu), x=>x.cover),
+    atsFav: rate(sea.filter(x=>x.exp>0), x=>x.cover), atsDog: rate(sea.filter(x=>x.exp<0), x=>x.cover),
+    ouSeason: rate(ouSea, x=>x.cover), ouL5: rate(ou.slice(-5), x=>x.cover), ouL10: rate(ou.slice(-10), x=>x.cover),
+    avgMargin: sea.length ? sea.reduce((t,x)=>t+x.margin,0)/sea.length : null,
+    avgSpread: sea.length ? sea.reduce((t,x)=>t-x.exp,0)/sea.length : null,      // average closing spread, team's side (negative = favored)
+    avgVsLine: sea.length ? sea.reduce((t,x)=>t+x.margin-x.exp,0)/sea.length : null,
+    nSeason: sea.length, atsLog: ats, ouLog: ou };
+  PROF.set(key, pr); return pr;
+}
+function gameView(g){  // one upcoming or past game, every field labeled by where it comes from
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g, ml = (DATA.ml||{})[gid], tot = (DATA.tot||{})[gid], ptot = (DATA.ptot||{})[gid];
+  let mlH = null, mlA = null, pMktH = null, mktSrc = null;
+  if (ml){ const ph = amProb(ml[0]), pa = amProb(ml[1]); mlH = ml[0]; mlA = ml[1]; pMktH = ph/(ph+pa); mktSrc = 'book'; }
+  else if (kh!=null && ka!=null && !(veg!=null && Math.abs(kh/(kh+ka)-winP(veg))>0.12)){ pMktH = kh/(kh+ka); mktSrc = 'kalshi'; }
+  return { g, gid, date, tm, h, a, neu, done: hs!==null,
+    spread: veg, pred, spreadEdge: veg!=null && pred!=null ? pred-veg : null,
+    total: tot ?? null, ptot: ptot ?? null, totalEdge: tot!=null && ptot!=null ? ptot-tot : null,
+    mlH, mlA, pMktH, mktSrc, kh, ka, pModelH: pred!=null ? normCdf(pred/sdFor(g)) : null };
+}
+function sideView(v, id){  // the same game from one team's side
+  const home = id===v.h, opp = home?v.a:v.h, sg = home?1:-1, t = current && current.byId.get(id), o = current && current.byId.get(opp);
+  const pr = teamProfile(id, v.date);
+  return { v, id, opp, home, neu: v.neu,
+    spread: v.spread==null ? null : -sg*v.spread,                 // team's posted spread, negative = favored
+    model: v.pred==null ? null : -sg*v.pred,
+    edge: v.spreadEdge==null ? null : sg*v.spreadEdge,             // points the model likes this team by, beyond the market
+    role: v.spread==null||v.spread===0 ? null : (sg*v.spread>0 ? 'fav' : 'dog'),
+    ml: home ? v.mlH : v.mlA, kc: home ? v.kh : v.ka, pMkt: v.pMktH==null ? null : (home ? v.pMktH : 1-v.pMktH),
+    pModel: v.pModelH==null ? null : (home ? v.pModelH : 1-v.pModelH),
+    rating: t ? t.rating : null, ratingRk: t ? t.ratingRk : null, oppRk: o ? o.ratingRk : null,
+    off: t ? t.adjO : null, offRk: t ? t.adjORk : null, def: t ? t.adjD : null, defRk: t ? t.adjDRk : null,
+    sos: t ? t.sos : null, sosRk: t ? t.sosRk : null, form: t ? t.form : null, formRk: t ? t.formRk : null,
+    conf: t ? t.conf : (DATA.teams[id]||[])[2], pr };
+}
+
+// ---------- shared presentation pieces ----------
+function heatCls(k, n){ if (!n) return 'na'; const r = k/n; if (n<5) return ''; return r>=0.8?'hg2':r>=0.65?'hg1':r<=0.2?'hr2':r<=0.35?'hr1':''; }
+function trendCell(r){ if (!r || !r.n) return '<span class="na">N/A</span>';  // always shows the sample: wins-losses
+  return `<span class="cell ${heatCls(r.w, r.n)}" title="${r.w} of ${r.n} decided games${r.p?`, ${r.p} push`:''}">${r.w}-${r.l}${r.p?'-'+r.p:''}</span>`; }
+function edgeCell(e, tag){ if (e==null) return '<span class="na">N/A</span>'; const a = Math.abs(e);
+  return `<span class="cell ${a>=3?(e>0?'hg2':'hr2'):a>=1.5?(e>0?'hg1':'hr1'):''}">${e>0?'+':'−'}${a.toFixed(1)}${tag?` ${tag}`:''}</span>`; }
+const naTxt = (v, f) => v==null ? '<span class="na">N/A</span>' : f(v);
+const rkTxt = r => r==null ? '' : `<span class="r">${r}</span>`;
+function teamLinkHtml(id, label){ return `<span class="tmlink tlink" data-team="${id}" tabindex="0" role="link">${label ?? esc(nm(id))}</span>`; }
+
+// ---------- Game Finder ----------
+const FX = {sort:'date', dir:1};
+const FX_DEFAULT = () => ({'fx-from': todayET(), 'fx-to': addDays(todayET(), 7)});
+const FCOLS = [  // key, label, group, tooltip, sort value
+  ['team','Team','', 'Team and opponent. Tap a team for its research page, the matchup for game research.', s=>nm(s.id)],
+  ['date','Kickoff','', 'Eastern time', s=>s.v.date+' '+(s.v.tm||'99')],
+  ['spread','Spread','MARKET', "This team's closing or current sportsbook spread (CFBD). Negative means favored.", s=>s.spread],
+  ['model','Model','MODEL', "This site's pregame projection as a spread for this team", s=>s.model],
+  ['edge','Edge','MODEL', 'Model margin minus market margin, from this team\'s side. Positive means the model likes this team more than the market does. A model edge is a disagreement, not a sure thing: see the Backtest tab for how edges have done.', s=>s.edge],
+  ['total','Total','MARKET', 'Sportsbook over/under (CFBD)', s=>s.v.total],
+  ['ptot','Model tot','MODEL', 'Pregame projected total: both teams\' opponent adjusted points, using only games played before this one', s=>s.v.ptot],
+  ['tedge','Tot edge','MODEL', 'Model total minus market total. Positive leans over.', s=>s.v.totalEdge],
+  ['ml','ML','MARKET', 'Sportsbook moneyline, or Kalshi price in cents when no book line is posted, with the no vig implied win chance', s=>s.pMkt],
+  ['pModel','Model win','MODEL', "Model's win probability for this team", s=>s.pModel],
+  ['ats','ATS','HISTORICAL', 'Record against the closing spread this season (wins-losses-pushes)', s=>s.pr.atsSeason.n?s.pr.atsSeason.w/s.pr.atsSeason.n:null],
+  ['atsL5','ATS L5','HISTORICAL', 'Against the spread, last 5 games with a line', s=>s.pr.atsL5.n?s.pr.atsL5.w/s.pr.atsL5.n:null],
+  ['ou','O/U','HISTORICAL', 'Overs-unders in this team\'s games this season (totals since 2013)', s=>s.pr.ouSeason.n?s.pr.ouSeason.w/s.pr.ouSeason.n:null],
+  ['ouL5','O/U L5','HISTORICAL', 'Overs-unders, last 5 games with a total', s=>s.pr.ouL5.n?s.pr.ouL5.w/s.pr.ouL5.n:null],
+  ['sos','SOS','DERIVED', 'Strength of schedule: average current rating of opponents played in the selected range, with national rank', s=>s.sos],
+  ['rating','Rating','MODEL', 'Opponent adjusted rating: projected margin vs an average FBS team on a neutral field, with national rank', s=>s.rating],
+  ['off','Off','MODEL', 'Adjusted offensive EPA per play, with rank', s=>s.off],
+  ['def','Def','MODEL', 'Adjusted defensive EPA per play allowed (lower is better), with rank', s=>s.def==null?null:-s.def],
+  ['form','Form','DERIVED', 'Average opponent adjusted G-Score over the last 3 games, in rating points. Above the rating means trending up.', s=>s.form],
+];
+function finderSides(){
+  const from = $('fx-from').value || todayET(), to = $('fx-to').value || '9999';
+  const out = [];
+  for (const g of DATA.games){ if (g[6]!==null || g[1]<from || g[1]>to) continue;
+    const v = gameView(g); out.push(sideView(v, v.a), sideView(v, v.h)); }
+  return out;
+}
+function finderFilter(rows){
+  const num = id => { const x = parseFloat($(id).value); return isNaN(x) ? null : x; };
+  const conf = $('fx-conf').value, team = $('fx-team').value.trim().toLowerCase(), role = $('fx-role').value, site = $('fx-site').value;
+  const [smin,smax,tmin,tmax,emin,temin,rmin,rmax,qmin,qmax] = ['fx-smin','fx-smax','fx-tmin','fx-tmax','fx-edge','fx-tedge','fx-rmin','fx-rmax','fx-qmin','fx-qmax'].map(num);
+  const rk = $('fx-rank').value, onlyModel = $('fx-rows').value==='model';
+  return rows.filter(s=>{
+    if (conf && s.conf!==conf) return false;
+    if (team && !nm(s.id).toLowerCase().includes(team) && !nm(s.opp).toLowerCase().includes(team)) return false;
+    if (role && s.role!==role) return false;
+    if (site==='home' && !(s.home&&!s.neu)) return false; if (site==='away' && (s.home||s.neu)) return false; if (site==='neu' && !s.neu) return false;
+    if ((smin!=null || smax!=null) && s.spread==null) return false;
+    if (smin!=null && s.spread<smin) return false; if (smax!=null && s.spread>smax) return false;
+    if ((tmin!=null || tmax!=null) && s.v.total==null) return false;
+    if (tmin!=null && s.v.total<tmin) return false; if (tmax!=null && s.v.total>tmax) return false;
+    if (emin!=null && (s.edge==null || s.edge<emin)) return false;
+    if (temin!=null && (s.v.totalEdge==null || Math.abs(s.v.totalEdge)<temin)) return false;
+    if (rk==='r' && !(s.ratingRk!=null && s.ratingRk<=25)) return false; if (rk==='u' && !(s.ratingRk==null || s.ratingRk>25)) return false;
+    if (rk==='o' && !(s.oppRk!=null && s.oppRk<=25)) return false;
+    if (rmin!=null && (s.rating==null || s.rating<rmin)) return false; if (rmax!=null && (s.rating==null || s.rating>rmax)) return false;
+    if (qmin!=null && (s.sos==null || s.sos<qmin)) return false; if (qmax!=null && (s.sos==null || s.sos>qmax)) return false;
+    if (onlyModel && !(s.edge!=null && s.edge>0)) return false;
+    return true; });
+}
+function renderFinder(){
+  if (!current) return;
+  const all = finderSides(), rows = finderFilter(all), col = FCOLS.find(c=>c[0]===FX.sort), f = col[4], d = FX.dir;
+  rows.sort((x,y)=>{ const a=f(x), b=f(y); if (a==null && b==null) return 0; if (a==null) return 1; if (b==null) return -1;
+    const c = typeof a==='string' ? (a<b?-1:a>b?1:0) : a-b; return c ? d*c : (x.v.gid-y.v.gid) || (x.home?1:-1); });
+  const groups = []; for (const c of FCOLS){ const last = groups[groups.length-1]; if (last && last[0]===c[2]) last[1]++; else groups.push([c[2],1]); }
+  $('ft').querySelector('thead').innerHTML = `<tr class="grp">${groups.map(([gname,n],i)=>`<th colspan="${n}" class="${i===0?'stick':''}">${gname?`<span class="src ${gname==='MARKET'?'k':gname==='MODEL'?'m':gname==='HISTORICAL'?'h':'d'}">${gname}</span>`:''}</th>`).join('')}</tr>
+    <tr class="cols">${FCOLS.map(([k,l,,tip],i)=>`<th class="${i<2?'l':''} ${i===0?'stick':''}" data-k="${k}" title="${esc(tip)}" tabindex="0" aria-sort="${FX.sort===k?(FX.dir<0?'descending':'ascending'):'none'}">${l}</th>`).join('')}</tr>`;
+  const sp = x => x==null ? '<span class="na">N/A</span>' : spreadTxt(x);
+  let alt = false, prev = null;
+  $('ft').querySelector('tbody').innerHTML = rows.length ? rows.map(s=>{
+    if (s.v.gid!==prev){ alt = !alt; prev = s.v.gid; }
+    const v = s.v, at = s.neu ? 'vs' : s.home ? 'vs' : '@';
+    const mlTxt = s.ml!=null ? `${amTxt(s.ml)} <span class="note">${(s.pMkt*100).toFixed(0)}%</span>` : s.pMkt!=null ? `${s.kc}¢ <span class="note">${(s.pMkt*100).toFixed(0)}% K</span>` : '<span class="na">N/A</span>';
+    return `<tr class="${alt?'alt':''}">
+      <td class="l stick">${s.ratingRk?`<span class="rk2">${s.ratingRk}</span> `:''}${teamLinkHtml(s.id)} <span class="note">${at} <span class="tmlink glink" data-gid="${v.gid}" data-side="${s.id}" tabindex="0" role="link">${esc(ab(s.opp))}${s.oppRk?' #'+s.oppRk:''} ›</span></span></td>
+      <td class="l note">${fmtDate(v.date,true)} ${v.tm||'TBA'}</td>
+      <td>${sp(s.spread)}</td><td>${sp(s.model)}</td><td>${edgeCell(s.edge)}</td>
+      <td>${naTxt(v.total, x=>x.toFixed(1))}</td><td>${naTxt(v.ptot, x=>x.toFixed(1))}</td><td>${edgeCell(v.totalEdge, v.totalEdge==null?'':v.totalEdge>0?'O':'U')}</td>
+      <td>${mlTxt}</td><td>${naTxt(s.pModel, x=>(x*100).toFixed(0)+'%')}</td>
+      <td>${trendCell(s.pr.atsSeason)}</td><td>${trendCell(s.pr.atsL5)}</td><td>${trendCell(s.pr.ouSeason)}</td><td>${trendCell(s.pr.ouL5)}</td>
+      <td>${naTxt(s.sos, f1)}${rkTxt(s.sosRk)}</td><td><b>${naTxt(s.rating, f1)}</b>${rkTxt(s.ratingRk)}</td>
+      <td>${naTxt(s.off, f3)}${rkTxt(s.offRk)}</td><td>${naTxt(s.def, f3)}${rkTxt(s.defRk)}</td><td>${naTxt(s.form, f1)}${rkTxt(s.formRk)}</td></tr>`; }).join('')
+    : `<tr><td colspan="${FCOLS.length}" class="empty">No games match these filters. ${all.length?'Try widening them or tap Reset.':'No upcoming games in this date range.'}</td></tr>`;
+  const games = new Set(rows.map(s=>s.v.gid)).size, lined = all.filter(s=>s.spread!=null).length/2, n = all.length/2;
+  $('fx-sum').innerHTML = `${games} game${games===1?'':'s'} shown (${rows.length} team rows) of ${n} in this date range. ${lined} have a posted spread; books usually post about a week out, so later games show N/A until then.`;
+  $('fx-note').innerHTML = `<span class="src k">MARKET</span> sportsbook lines via CollegeFootballData, or Kalshi (K) when no book moneyline is posted. <span class="src m">MODEL</span> this site's projections; ratings follow the season and date filters at the top. <span class="src h">HISTORICAL</span> results against closing lines, with the sample in every cell (hover for details), colored only when 5+ games back it. <span class="src d">DERIVED</span> computed from the model. A model edge is a disagreement with the market, not a guaranteed winner; against closing lines it has not been profitable in recent seasons (see Backtest).`;
+}
+function finderInit(){
+  const confs = [...new Set(Object.values(DATA.seasons[SEASONS[SEASONS.length-1]].conf))].sort();
+  $('fx-conf').innerHTML = '<option value="">All</option>' + confs.map(c=>`<option>${esc(c)}</option>`).join('');
+  const d = FX_DEFAULT(); for (const k in d) $(k).value = d[k];
+  $('ffilters').addEventListener('input', renderFinder);
+  $('fx-reset').addEventListener('click', ()=>{ $('ffilters').querySelectorAll('input,select').forEach(el=>{ if (el.tagName==='SELECT') el.selectedIndex=0; else el.value=''; }); const d=FX_DEFAULT(); for (const k in d) $(k).value=d[k]; renderFinder(); });
+  $('ft').querySelector('thead').addEventListener('click', e=>{ const th=e.target.closest('th[data-k]'); if(!th) return;
+    const k = th.dataset.k; if (FX.sort===k) FX.dir*=-1; else { FX.sort=k; FX.dir = ['team','date'].includes(k) ? 1 : -1; } renderFinder(); });
+  $('ft').querySelector('thead').addEventListener('keydown', e=>{ if (e.key==='Enter') e.target.click(); });
+}
+
 // ---------- controls ----------
 function seasonBounds(){
   const last = SEASONS[SEASONS.length-1];
@@ -1211,7 +1423,18 @@ function syncControls(){
   $('conf').innerHTML = ['All',...confs].map(c=>`<option ${c===state.conf?'selected':''}>${esc(c)}</option>`).join('');
   $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
 }
-function refresh(){ compute(); renderTable(); renderMatchup(); }
+function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); }
+function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; } }
+// one handler for team and game links anywhere on the page
+function openGame(gid, sideId){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
+  const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===a ? a : h, home = A===h;
+  goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
+function openTeam(id){ showTab('ratings'); state.open = id; if (state.conf!=='All' && current.byId.get(id)?.conf!==state.conf){ state.conf='All'; $('conf').value='All'; }
+  renderTable(); const tr = document.querySelector(`#rt tr.team[data-id="${id}"]`); if (tr) tr.scrollIntoView({block:'center'}); }
+function linkGo(e){ const tl = e.target.closest('.tlink'); if (tl){ e.preventDefault(); openTeam(+tl.dataset.team); return; }
+  const gl = e.target.closest('.glink'); if (gl){ e.preventDefault(); openGame(+gl.dataset.gid, +gl.dataset.side); } }
+document.addEventListener('click', linkGo);
+document.addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest && e.target.closest('.tlink,.glink')) linkGo(e); });
 function save(){ try{ localStorage.setItem('gtr', JSON.stringify({season:state.season,prior:state.prior,conf:state.conf})); }catch(e){} }
 
 $('presets').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(!b) return; applyPreset(b.dataset.p); syncControls(); refresh(); });
@@ -1269,14 +1492,15 @@ function toggleRow(e){ const tr=e.target.closest('tr.team'); if(!tr) return; con
 tbody.addEventListener('click', toggleRow);
 tbody.addEventListener('keydown', e=>{ if(e.key==='Enter') toggleRow(e); });
 document.querySelector('nav.tabs').addEventListener('click', e=>{
-  const b=e.target.closest('button'); if(!b) return;
-  for (const t of TABS){ const on = b.id==='tab-'+t; $('tab-'+t).setAttribute('aria-selected',on); $('p-'+t).hidden=!on; }
+  const b=e.target.closest('button'); if(!b) return; showTab(b.id.slice(4));
 });
 
 (function init(){
   try{ const s=JSON.parse(localStorage.getItem('gtr')||'{}'); if(s.season&&(s.season==='all'||s.season==='last3'||DATA.seasons[s.season])) state.season=s.season; if(typeof s.prior==='boolean') state.prior=s.prior; if(s.conf) state.conf=s.conf; }catch(e){}
   $('season').innerHTML = [...SEASONS].reverse().map(y=>`<option value="${y}">${y}</option>`).join('') + `<option value="last3">Last 3 seasons</option><option value="all">All seasons (${SEASONS[0]} to ${SEASONS[SEASONS.length-1]})</option>`;
   $('season').value=state.season; $('prior').checked=state.prior;
+  $('teamlist').innerHTML = [...new Set(SEASONS.slice(-3).flatMap(y=>DATA.seasons[y].teams))].map(id=>`<option value="${esc(nm(id))}">`).join('');
+  finderInit();
   applyPreset('all'); syncControls(); refresh(); renderAbout(); renderGames(); renderFeed(); renderBacktest();
 })();
 </script>

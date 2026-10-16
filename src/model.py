@@ -113,6 +113,10 @@ def walk(year, shrink=0.9, halflife=None):
                 break
             o, d, mu, h = ridge(hist, ids, num, wc, LAMS[f], p, dw) if len(hist) else (p[:len(ids)], p[len(ids):], 0, 0)
             nets[f] = dict(zip(ids, o - d))
+            if f == "PTS":  # pregame projected total: both teams' expected points; home field cancels out
+                if not len(hist):
+                    mu = R[year - 1].pts.mean() if year - 1 in R else 28.0
+                po, pd_, mu_pts = dict(zip(ids, o)), dict(zip(ids, d)), mu
         if len(nets) < len(FEATS):
             continue
         for g in gw.itertuples():
@@ -120,5 +124,6 @@ def walk(year, shrink=0.9, halflife=None):
                    "margin": g.home_score - g.away_score, "vegas": g.home_spread_margin, "ngames": len(hist)}
             for f in FEATS:
                 rec[f] = nets[f][g.home_id] - nets[f][g.away_id]
+            rec["ptot"] = 2 * mu_pts + po[g.home_id] + pd_[g.away_id] + po[g.away_id] + pd_[g.home_id]
             out.append(rec)
     return pd.DataFrame(out)

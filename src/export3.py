@@ -39,6 +39,14 @@ for g in up.itertuples():
     pred = round(float(rt[hi] - rt[ai] + (0 if g.neutral_site else H)), 2)
     mingp = min(played_2026.get(hi, 0), played_2026.get(ai, 0))
     games.append([gid, d, tm, hi, ai, bool(g.neutral_site), None, None, pred, None, mingp]); n_up += 1
+# pregame projected totals, separate dict so the games row layout (and kalshi.py's padding) stays the same
+site['ptot'] = {str(int(gid)): round(float(v), 1) for gid, v in pre['ptot'].dropna().items()} if 'ptot' in pre else {}
+num, wc = FEATS['PTS']; po, pdd, pmu, _ = ridge(r, ids, num, wc, LAMS['PTS'], pri['PTS'])
+pt = {t: (po[i], pdd[i]) for i, t in enumerate(ids)}
+for g in up.itertuples():
+    hi, ai = int(g.home_id), int(g.away_id)
+    if int(g.game_id) in done or hi not in pt or ai not in pt: continue
+    site['ptot'][str(int(g.game_id))] = round(float(2*pmu + pt[hi][0] + pt[ai][1] + pt[ai][0] + pt[hi][1]), 1)
 games.sort(key=lambda x: (x[1], x[2] == '', pd.to_datetime(x[2], format='%I:%M %p').time() if x[2] else 0))
 site['games'] = games; site['asof'] = pd.Timestamp.now(tz='America/New_York').strftime('%Y-%m-%d')
 json.dump(site, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
