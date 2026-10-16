@@ -3,7 +3,8 @@ from paths import DATA_DIR
 from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 from model import walk
-YEARS=list(range(2008,2027))
+from season import SEASON
+YEARS=list(range(2008,SEASON+1))
 SHRINKS=(0.9,)
 HALFLIVES=(None,)
 def job(a): y,sh,hl=a; df=walk(y,sh,hl,snap=True); df['shrink']=sh; df['hl']=hl or 0; return df

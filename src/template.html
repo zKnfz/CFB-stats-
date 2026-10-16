@@ -203,7 +203,7 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .cov{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.covi{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:2px 7px}
 .vso tr.now td{background:var(--accent-soft)}.vso{width:100%}.vso td.l{white-space:normal;min-width:7.5em}
 @media (max-width:560px){.vso{font-size:11.5px}.vso td,.vso th{padding:6px 2px}.vso td.l{min-width:6.5em}.vso .src{display:none}.vso tr.now td.l b::after{content:' •'}}
-.covi.ok{color:var(--good)}.covi.no{color:var(--muted);border-style:dashed}
+.covi.ok{color:var(--good)}.covi.qbw{color:var(--bad);border-color:var(--bad)}.covi.no{color:var(--muted);border-style:dashed}
 #gv .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 #gv .seg button{font:600 13px var(--data);background:var(--panel);color:var(--muted);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer;min-height:36px}
 #gv .seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
@@ -481,7 +481,7 @@ const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
 const TABS = ['finder','edges','ratings','games','feed','tf','matchup','game','team','backtest','about'];
 const $ = id => document.getElementById(id);
-let state = {season:'2026', from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
+let state = {season:Object.keys(DATA.seasons).sort().pop(), from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
 // All seasons merged, so a date range can cross seasons
 const SEASONS = Object.keys(DATA.seasons).sort();
@@ -986,7 +986,7 @@ function renderAbout(){
     <p>Seasons go back to 2004, the first year with play-by-play. Coverage is thinner in 2004 to 2007 and in 2020, and the page flags it. A date range can cross seasons (Last 3 seasons, All seasons, or any custom dates). That treats each team as one unit over the whole stretch, which ignores roster turnover, so a matchup from a multi-season range is less trustworthy than one from the current season.</p>
     <p>Play stats use only runs, passes and sacks between FBS teams. Kneels and special teams are out. Plays in garbage time are dropped: a margin over 38 in the 2nd quarter, 28 in the 3rd, or 22 in the 4th. Scoring margin uses final scores, so special teams count there.</p>
     <h2>How good is it</h2>
-    <p>Tested on ${t.n} games in 2025 and 2026 that the model was not fit on, predicting each week using only games played before it:</p>
+    <p>Tested on ${t.n} games from 2025 on that the model was not fit on, predicting each week using only games played before it:</p>
     <div class="stats">
       <div class="stat"><b>${t.mae.toFixed(1)}</b><span>avg miss in points (EPA-only version: ${DATA.backtest.test_old_mae.toFixed(1)})</span></div>
       <div class="stat"><b>${t.vegas_mae.toFixed(1)}</b><span>Vegas line, same games</span></div>
@@ -1695,6 +1695,12 @@ function gvSignal(v){ if (v.spreadEdge==null || Math.abs(v.spreadEdge)<1) return
   const pos = sc.filter(x=>x>0).length, neg = sc.filter(x=>x<0).length;
   const lbl = pos && neg ? 'Conflicted' : size>=3 && pos>=2 ? 'Strong' : pos>=1 ? 'Moderate' : neg ? 'Conflicted' : 'Weak';
   return {lbl, side, cls: {Strong:'hg2', Moderate:'hg1', Weak:'na', Conflicted:'hr1'}[lbl], why}; }
+function gvQB(v){  // quarterback context for upcoming games (qb.py): last game's main passer vs the season attempts leader
+  const Q = DATA.qb; if (!Q || v.done) return '';
+  const one = id => { const q = Q[id]; if (!q) return `<span class="covi no">— ${esc(ab(id))} QB N/A</span>`;
+    const [last, share, lead, att, d] = q, changed = last!==lead, split = share<0.7;
+    return `<span class="covi ${changed||split?'qbw':'ok'}" title="Last game ${fmtDate(d)}: ${esc(last)} threw ${Math.round(share*100)}% of passes. Season attempts leader: ${esc(lead)} (${att}).">${changed||split?'⚠':'✓'} ${esc(ab(id))} QB ${esc(last)}${split?` (${Math.round(share*100)}% of passes last game)`:''}${changed?`, season leader ${esc(lead)}`:''}</span>`; };
+  return `<div class="cov">${one(v.a)}${one(v.h)}</div><p class="note" style="margin:4px 0 0">QB is who threw most passes in each team's last game; the model doesn't know who starts tonight, so check the news. A change is shown for context: in testing (13,306 games since 2008) the model wasn't worse against the line after a quarterback change.</p>`; }
 function gvCoverage(v){ const g = v.g, y = seasonOf(v.date), t = FPX && anPool().idx.get(v.gid), cov = DATA.coverage[y];
   const it = (ok, txt) => `<span class="covi ${ok?'ok':'no'}">${ok?'✓':'—'} ${txt}</span>`;
   const gpa = t ? t.v.gpA : null, gpb = t ? t.v.gpB : null;  // gpA/gpB are the A and B sides
@@ -1933,7 +1939,7 @@ function renderGame(){
       ${key('Model win','m', v.pModelH==null?'<span class="na">N/A</span>':`${esc(ab(v.pModelH>=0.5?h:a))} ${(Math.max(v.pModelH,1-v.pModelH)*100).toFixed(1)}%`, mkPct==null?'no market price':`market ${esc(ab(mkPct>=0.5?h:a))} ${(Math.max(mkPct,1-mkPct)*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`)}
     </div>
     <p class="note" style="margin:8px 0 0">${esc(cS.txt)} ${esc(cT.txt)} ${(()=>{ const op = openOf(g); const oc = op==null||v.pred==null ? null : openCheck(v.pred-op); return oc ? esc(oc.txt) : ''; })()}</p>
-    ${gvCoverage(v)}
+    ${gvCoverage(v)}${gvQB(v)}
     <div class="chips" style="margin-top:10px"><button class="chip" id="gvMatch" type="button">Line history, situations, head to head ›</button><button class="chip" id="gvSave" type="button">${wlHas(v.gid)?'★ On watchlist':'+ Watchlist'}</button></div>
   </div>`;
 

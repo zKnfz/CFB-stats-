@@ -17,13 +17,14 @@ Pipeline, in order (all scripts live in `src/`, run from `src/`):
 
 | Step | Script | Output in `data/` |
 |---|---|---|
-| Download | `fetch_data.py 2026` | `pbp_YYYY`, `sched_YYYY`, `teaminfo_YYYY` parquet files, plus `up_cfb_schedules_2026.parquet` (full schedule including unplayed games) |
+| Download | `fetch_data.py` (season from `season.py`) | `pbp_YYYY`, `sched_YYYY`, `teaminfo_YYYY` parquet files, plus `up_cfb_schedules_2026.parquet` (full schedule including unplayed games) |
 | Prep | `prep.py` (uses `build.load_season`) | `prep.pkl`: per team-game rows for every season |
 | Walk-forward | `run_bt.py` (uses `model.walk`, `snap=True`) | `bt.pkl`: pregame features for every 2008+ game, plus each side's pregame team snapshot (`h_*`/`a_*` columns) |
 | Leak check | `test_analogs.py` | nothing; fails the run if a fingerprint can see its own game or later ones |
 | Early years | `pregame.py` | `pregame.pkl`: adds 2004 to 2007 |
 | Fit + export | `export2.py` | `site_data.json`: model weights, backtest stats, per-game rows, priors |
-| Games | `export3.py` | adds pregame picks for every past game and upcoming 2026 games |
+| Games | `export3.py` | adds pregame picks for every past game and this season's upcoming games |
+| QB context | `qb.py` | adds `qb` to `site_data.json`: each team's main passer last game, his share of passes, and the season attempts leader (`--all` also builds `qb.pkl` for every game since 2004) |
 | Spreads | `lines.py` | keeps `lines_hist.json` (committed): closing and opening spread plus total for every game since 2013, past seasons fetched once, current season refreshed each run. Fills spreads into upcoming games and adds `lineopen`, `open` (every game's opener) and `tot` to `site_data.json` |
 | Market odds | `kalshi.py` | adds live Kalshi odds to upcoming games, logs a snapshot to `kalshi_history.jsonl` |
 | Forward test | `track.py` | logs each coming week game's first seen line with the model's number to `tracking.jsonl` (committed), adds `track` to `site_data.json` |
@@ -120,10 +121,11 @@ Built in phases on top of the existing model, all client side so it still runs o
   - Finding: analog cover rates do not predict covers. Every lined game 2010 on, Balanced (Good+ analogs, 10+ lined of 25): when analogs covered 55%+ the A-like side covered 50.4% (5,443 games); at 45% or less the other side covered 50.3% (1,812). Market preset 51.4% of 7,946. 2025+ only: Balanced 53.7% of 652, Market 48.7% of 719. So analogs are context, not a signal.
   - Teams Like These: each team's pregame snapshot vs every earlier team snapshot (`TL_FEATS`), best per team season, never the same team's own season; shows rest of that season's record and final rank as labeled hindsight.
   - Why the model (`gvWhy`): model margin = rating gap ± home field from the same snapshot, plus the 3 most extreme matchup stats that season, plus the ingredient split for upcoming games. Signal agreement (`gvSignal`): counts the edge size's 2025+ record and line movement since open; Strong, Moderate, Weak, Conflicted by stated rules. Analogs are listed but not counted (finding above). Data coverage chips (`gvCoverage`): season play by play coverage, games played, which markets are posted, fingerprint features present.
+- Quarterback context (`qb.py`, `gvQB`): upcoming game pages show each team's main passer last game and flag a change from the season's attempts leader or a split game (under 70% of passes). Tested first as a reliability warning and it failed: across 13,306 lined games since 2008, games right after a main passer change were not worse for the model vs the line (model minus line average miss +0.20 vs +0.28 without a change; 5+ point edges covered 53.1% vs 53.7%). So it's shown as context for checking the news, not as a warning.
 - Not available: AP rankings ("top 25" means T-Rank top 25).
 
 ## Known gaps and next ideas
 
-- The current season (2026) is hardcoded in `rebuild.sh`, `fetch_data.py`'s default and `export3.py`. Make it one setting before next season.
+- The current season is one setting: `src/season.py` (`SEASON`, env var override). Change it in August once the new schedule file exists, then run and check the pipeline before the first games.
 - Preseason recruiting talent is in, returning production is fetched but didn't help. Still not tried: transfers, QB-specific returning production instead of whole-team.
 - Not built yet: remaining Five Factors columns (field position, finishing drives), player stats (QB, rusher and receiver EPA are possible; defenders aren't), projected final records, a wins-above-playoff-team résumé stat.

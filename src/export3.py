@@ -2,6 +2,7 @@ import sys, json, pickle; sys.path.insert(0,'.')
 from paths import DATA_DIR
 import numpy as np, pandas as pd
 from model import D, R, FEATS, LAMS, ridge, final_prior, snapshot, FP_FEATS
+from season import SEASON
 site = json.load(open(DATA_DIR + '/site_data.json'))
 B = site['params']['beta']; H = site['params']['hfa']; MF = ['NT','SR','PTS']
 pre = pd.read_pickle(DATA_DIR + '/pregame.pkl').set_index('gid')
@@ -9,7 +10,7 @@ def et(ts):
     t = pd.to_datetime(ts, utc=True).tz_convert('America/New_York')
     return t.strftime('%Y-%m-%d'), ('' if (t.hour == 0 and t.minute == 0) else t.strftime('%-I:%M %p'))
 games = []
-for y in range(2004, 2027):
+for y in range(2004, SEASON + 1):
     sc = pd.read_parquet(f"{DATA_DIR}/sched_{y}.parquet").set_index('game_id')
     played = {}
     for g in D[y][1].sort_values('date').itertuples():
@@ -22,14 +23,14 @@ for y in range(2004, 2027):
         v = None if pd.isna(g.home_spread_margin) else float(g.home_spread_margin)
         games.append([int(g.game_id), d, tm, int(g.home_id), int(g.away_id), bool(g.neutral_site), int(g.home_score), int(g.away_score), pred, v, mingp])
         played[g.home_id], played[g.away_id] = hp + 1, ap + 1
-    if y == 2026: played_2026 = played
-# upcoming 2026: current ratings, prior on
-y = 2026; ids = sorted(D[y][2].team_id); pri = final_prior(y, ids, 0.9); r = R[y]
+    if y == SEASON: played_now = played
+# upcoming games this season: current ratings, prior on
+y = SEASON; ids = sorted(D[y][2].team_id); pri = final_prior(y, ids, 0.9); r = R[y]
 rate = np.zeros(len(ids))
 for f in MF:
     num, wc = FEATS[f]; o, d_, mu, h = ridge(r, ids, num, wc, LAMS[f], pri[f]); rate += B[f]*(o-d_)
 rt = dict(zip(ids, rate)); done = set(D[y][1].game_id.astype(int))
-up = pd.read_parquet(DATA_DIR + '/up_cfb_schedules_2026.parquet')
+up = pd.read_parquet(f'{DATA_DIR}/up_cfb_schedules_{SEASON}.parquet')
 n_up = 0
 for g in up.itertuples():
     gid = int(g.game_id); hi, ai = int(g.home_id), int(g.away_id)
@@ -37,7 +38,7 @@ for g in up.itertuples():
     d, tm = et(g.start_date)
     if g.start_time_tbd: tm = ''
     pred = round(float(rt[hi] - rt[ai] + (0 if g.neutral_site else H)), 2)
-    mingp = min(played_2026.get(hi, 0), played_2026.get(ai, 0))
+    mingp = min(played_now.get(hi, 0), played_now.get(ai, 0))
     games.append([gid, d, tm, hi, ai, bool(g.neutral_site), None, None, pred, None, mingp]); n_up += 1
 # pregame projected totals, separate dict so the games row layout (and kalshi.py's padding) stays the same
 site['ptot'] = {str(int(gid)): round(float(v), 1) for gid, v in pre['ptot'].dropna().items()} if 'ptot' in pre else {}
@@ -48,7 +49,7 @@ for g in up.itertuples():
     if int(g.game_id) in done or hi not in pt or ai not in pt: continue
     site['ptot'][str(int(g.game_id))] = round(float(2*pmu + pt[hi][0] + pt[ai][1] + pt[ai][0] + pt[hi][1]), 1)
 # matchup fingerprints: each side's pregame team snapshot, for Games Like This on the page.
-# Past games come from the walk forward (only games before that week); upcoming games from every 2026
+# Past games come from the walk forward (only games before that week); upcoming games from every current season
 # game so far, which is what the walk forward would use for them. Values are deviations from that
 # fit's league average, stored as scaled integers to keep the page small; null = not available.
 FP_STATS = ["E", "SR", "EX", "PE", "RE", "HV", "FD", "PTS"]
@@ -96,4 +97,4 @@ json.dump(site, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
 done_g = [g for g in games if g[6] is not None and g[8] is not None]
 acc = np.mean([(g[8] > 0) == (g[6] > g[7]) for g in done_g if g[6] != g[7]])
 print('games', len(games), 'upcoming', n_up, 'graded', len(done_g), 'SU acc', round(acc,3))
-print([g for g in games if g[1] == '2026-10-08'][:3])
+print([g for g in games if g[6] is None][:3])

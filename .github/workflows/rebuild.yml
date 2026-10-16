@@ -40,13 +40,14 @@ jobs:
           OMP_NUM_THREADS: "1"   # the walk forward runs one process per season; threaded numpy on top oversubscribes the cores
           OPENBLAS_NUM_THREADS: "1"
         run: |
-          python3 fetch_data.py 2026
+          python3 fetch_data.py   # season comes from src/season.py
           python3 prep.py
           python3 run_bt.py
           python3 pregame.py
           python3 test_analogs.py   # look-ahead check on the matchup fingerprints; a failure stops the deploy
           python3 export2.py
           python3 export3.py
+          python3 qb.py   # quarterback context for this season's teams
           python3 lines.py
           python3 kalshi.py
           python3 track.py   # logs new openers with the model's number to tracking.jsonl (forward test)

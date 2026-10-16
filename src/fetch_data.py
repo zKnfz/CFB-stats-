@@ -1,7 +1,8 @@
 """Download play-by-play, schedules and team info for 2003 to CURRENT into ../data."""
 import os, sys, urllib.request
 from paths import DATA_DIR
-CURRENT = int(sys.argv[1]) if len(sys.argv) > 1 else 2026
+from season import SEASON
+CURRENT = int(sys.argv[1]) if len(sys.argv) > 1 else SEASON
 REL = "https://github.com/sportsdataverse/sportsdataverse-data/releases/download"
 RAW = "https://raw.githubusercontent.com/sportsdataverse/cfbfastR-data/main"
 os.makedirs(DATA_DIR, exist_ok=True)

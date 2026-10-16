@@ -3,6 +3,7 @@ from paths import DATA_DIR
 import numpy as np, pandas as pd
 from model import D, R, FEATS, LAMS, ridge, final_prior
 from scipy.stats import norm
+from season import SEASON
 SHRINK = 0.9; MF = ['NT','SR','PTS']
 # bump this whenever FEATS, MF, beta, a lambda, or SHRINK changes, so old backtest rows
 # can be told apart from a different model's. Not bumped for display-only additions.
@@ -33,13 +34,13 @@ te = bt[bt.year>=2025]
 Xo = np.c_[tr.E, tr.home]; bo = np.linalg.lstsq(Xo, tr.margin, rcond=None)[0]
 old_mae = float((np.c_[te.E, te.home]@bo - te.margin).abs().mean())
 bt_out = {"test": sc(te), "test_old_mae": old_mae, "val": sc(bt[(bt.year>=2021)&(bt.year<=2024)]),
-          "train_years": "2008 to 2024", "test_years": "2025 and 2026 so far"}
+          "train_years": "2008 to 2024", "test_years": f"2025 to {SEASON} so far"}
 print('beta', beta, 'sd', sd, bt_out)
 teams_all = pd.concat([D[y][2] for y in sorted(D)]).drop_duplicates('team_id', keep='last')
 out = {"params": {"lam": LAMS, "beta": {f: round(float(b),4) for f,b in zip(MF, beta[:3])}, "hfa": round(float(beta[3]),3), "sd": round(sd,3), "sd_early": round(sd_early,3), "shrink": SHRINK, "model_version": MODEL_VERSION},
        "backtest": bt_out, "teams": {int(r.team_id): [r.school, r.abbreviation, r.conference, r.color] for r in teams_all.itertuples()},
        "seasons": {}, "coverage": {}}
-for y in range(2004, 2027):
+for y in range(2004, SEASON + 1):
     sc_ = pd.read_parquet(f"{DATA_DIR}/sched_{y}.parquet"); fbs = set(D[y][2].team_id)
     sc_ = sc_[sc_.home_id.astype(int).isin(fbs) & sc_.away_id.astype(int).isin(fbs)]
     out["coverage"][str(y)] = round(len(D[y][1])/max(len(sc_),1), 3)
@@ -65,8 +66,8 @@ for y in sorted(D):
     rating = sum(b * (v[f][0] - v[f][1]) for f, b in zip(MF, beta[:3]))
     out["final"][y] = {int(t): [round(float(rating[i]), 2), round(float(v["E"][2] + v["E"][0][i]), 4), round(float(v["E"][2] + v["E"][1][i]), 4)] for i, t in enumerate(ids)}
 json.dump(out, open(DATA_DIR + '/site_data.json','w'), separators=(',',':'))
-# python reference for 2026 with prior, to check the browser
-y=2026; ids=sorted(D[y][2].team_id); pri=final_prior(y, ids, SHRINK); r=R[y]
+# python reference for the current season with prior, to check the browser
+y=SEASON; ids=sorted(D[y][2].team_id); pri=final_prior(y, ids, SHRINK); r=R[y]
 tot=np.zeros(len(ids))
 for f,b in zip(MF,beta[:3]):
     num,wc=FEATS[f]; o,d,mu,h=ridge(r,ids,num,wc,LAMS[f],pri[f]); tot+=b*(o-d)

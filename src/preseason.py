@@ -9,6 +9,7 @@ returning production don't change once a season starts and CFBD's free tier caps
 import sys, os, json, unicodedata, urllib.request
 sys.path.insert(0, '.')
 from paths import DATA_DIR
+from season import SEASON
 
 API_KEY = os.environ.get("CFBD_API_KEY")
 BASE = "https://api.collegefootballdata.com"
@@ -39,9 +40,9 @@ def main():
         out = json.load(open(path))
     except (FileNotFoundError, ValueError):
         out = {}
-    years = [y for y in range(2015, 2027) if str(y) not in out]
+    years = [y for y in range(2015, SEASON + 1) if str(y) not in out]
     if not years:
-        print("preseason.json already has 2015 to 2026, no CFBD calls needed")
+        print(f"preseason.json already has 2015 to {SEASON}, no CFBD calls needed")
         return
     if not API_KEY:
         print("No CFBD_API_KEY set, skipping preseason fetch for", years)

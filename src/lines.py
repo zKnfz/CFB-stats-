@@ -18,9 +18,9 @@ CFBD game ids are ESPN ids, same as ours. Run after export3.py, before kalshi.py
 import sys, os, json, urllib.request
 sys.path.insert(0, '.')
 from paths import DATA_DIR
+from season import SEASON
 
 API_KEY = os.environ.get("CFBD_API_KEY")
-SEASON = 2026
 FIRST = 2013
 HIST = DATA_DIR + '/lines_hist.json'
 PROVIDERS = ["consensus", "DraftKings", "ESPN Bet", "Bovada", "William Hill (New Jersey)"]
