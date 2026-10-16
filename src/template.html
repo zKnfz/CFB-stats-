@@ -58,6 +58,9 @@ nav.tabs button{flex:0 0 auto;white-space:nowrap}
 .icard .ib{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line);font-family:var(--data);font-size:14px}
 .icard .ib .px{font-weight:700;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
 .icard .strip{margin:0;gap:2px}.icard .strip i{height:4px;border-radius:0}
+.icard .rates{display:flex;gap:6px;padding:0 12px 8px;flex-wrap:wrap;font-family:var(--data);font-size:12px}
+.icard .rates span{border:1px solid var(--line);border-radius:6px;padding:2px 6px;color:var(--muted)}
+.icard .rates b{margin-left:4px}.icard .rates .hi{color:var(--good)}.icard .rates .lo{color:var(--bad)}
 .icard details{padding:8px 12px 10px;font-size:13px;color:var(--muted)}
 .icard summary{cursor:pointer;list-style:none}.icard summary::-webkit-details-marker{display:none}
 .verdict{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:4px}
@@ -889,6 +892,16 @@ const L10 = (()=>{ const hist=new Map(), out=Array.from({length:11},()=>({c:0,n:
       if (h.length>=10){ const k=h.filter(Boolean).length; out[k].n++; if (cov) out[k].c++; }
       h.push(cov); if (h.length>10) h.shift(); hist.set(id,h); } }
   return out; })();
+const HR10 = (()=>{  // ats: team margin vs this game's spread; ou: game points vs this game's total
+  const T=DATA.tot||{}, mh=new Map(), ph=new Map(), out={ats:Array.from({length:11},()=>({c:0,n:0})), ou:Array.from({length:11},()=>({c:0,n:0}))};
+  const gs=DATA.games.filter(g=>g[6]!==null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:0);
+  for (const g of gs){ const pts=g[6]+g[7], t=T[g[0]];
+    for (const [id,m,line] of [[g[3],g[6]-g[7],g[9]],[g[4],g[7]-g[6],g[9]===null?null:-g[9]]]){
+      const hm=mh.get(id)||[], hp=ph.get(id)||[];
+      if (line!==null && hm.length>=10 && m!==line){ const k=hm.filter(x=>x>line).length; out.ats[k].n++; if (m>line) out.ats[k].c++; }
+      if (t!=null && hp.length>=10 && pts!==t){ const k=hp.filter(x=>x>t).length; out.ou[k].n++; if (pts>t) out.ou[k].c++; }
+      hm.push(m); hp.push(pts); if (hm.length>10){ hm.shift(); hp.shift(); } mh.set(id,hm); ph.set(id,hp); } }
+  return out; })();
 const OU10 = (()=>{ const T=DATA.tot||{}, hist=new Map(), out=Array.from({length:11},()=>({c:0,n:0}));
   const gs=DATA.games.filter(g=>g[6]!==null&&T[g[0]]!=null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:0);
   for (const g of gs){ const r=g[6]+g[7]-T[g[0]]; if (!r) continue;
@@ -960,7 +973,37 @@ function suInsightsFor(id, opp, g){
   const list = streak>=5 ? l10.slice(-streak) : l10;
   return [{id, opp, gid:g[0], text, kind:'su', mkt:'su', w:list.length, n:list.length, avg: list.reduce((t,x)=>t+x.margin,0)/list.length, list, z: 1.5+streak/10}];
 }
+function hrInsightsFor(id, opp, g){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, T = DATA.tot||{}, name = nm(id), out = [];
+  const past = teamGames(id).filter(x=>x[1]<date).sort((x,y)=>x[1]<y[1]?-1:1);
+  const y = seasonOf(date), sinceY = ALL.span[y][0];
+  const build = (mkt, line, val, over) => {
+    const res = past.map(x=>({date:x[1], opp: x[3]===id?x[4]:x[3], v: val(x)})).filter(r=>r.v!==0);
+    const r = n => { const s=res.slice(-n); return {k:s.filter(q=>(q.v>0)===over).length, n:s.length}; };
+    const L10 = r(10); if (L10.n<10) return null;
+    return {res, L5:r(5), L10, L20:r(20), season: (l=>({k:l.filter(q=>(q.v>0)===over).length,n:l.length}))(res.filter(q=>q.date>=sinceY)),
+            h2h: (l=>({k:l.filter(q=>(q.v>0)===over).length,n:l.length}))(res.filter(q=>q.opp===opp).slice(-5))};
+  };
+  if (veg!==null){ const line = id===h ? veg : -veg;  // market's expected margin for this team; it covers by beating it
+    const st = build('ats', line, x=>(x[3]===id?x[6]-x[7]:x[7]-x[6]) - line, true);
+    if (st && st.L10.k>=8){ const need = Math.floor(line)+1;
+      const what = line>0 ? `won by ${need}+` : line===0 ? 'won' : `won or lost by ${-need} or fewer`;
+      out.push({id, opp, gid, mkt:'ats', kind:'hr', over:true, line, text:`${name} has ${what} in ${st.L10.k} of its last 10 games`, w:st.L10.k, n:10,
+        list: st.res.slice(-10).map(q=>({date:q.date, cover:q.v>0?1:-1})), rates:st, avg: st.res.slice(-10).reduce((t,q)=>t+q.v,0)/10, z: Math.abs(st.L10.k-5)/1.58 + 1}); } }
+  const t = T[gid];
+  if (t!=null){ for (const over of [true,false]){
+    const st = build('ou', t, x=>x[6]+x[7]-t, over);
+    if (st && st.L10.k>=8) out.push({id, opp, gid, mkt:'ou', kind:'hr', over, line:t, text:`${name}'s games have ${over?'gone over':'stayed under'} ${t} points in ${st.L10.k} of the last 10`, w:over?st.L10.k:10-st.L10.k, n:10,
+        list: st.res.slice(-10).map(q=>({date:q.date, cover:(q.v>0)===over?1:-1})), rates:st, avg: st.res.slice(-10).reduce((tt,q)=>tt+q.v,0)/10, z: Math.abs(st.L10.k-5)/1.58 + 1}); } }
+  return out;
+}
 function signalCheck(ins){
+  if (ins.kind==='hr'){ const B = HR10[ins.mkt], k = ins.rates.L10.k, s={c:0,n:0};
+    // over side or ats: count teams that cleared k+ of 10; under side: teams that cleared 10-k or fewer
+    for (let i=0;i<=10;i++) if (ins.over ? i>=k : i<=10-k){ s.c += ins.over ? B[i].c : B[i].n-B[i].c; s.n += B[i].n; }
+    const p = s.n ? s.c/s.n : 0, [lo] = wilsonCI(s.c, s.n), real = lo>0.524 && s.n>=200;
+    const what = ins.mkt==='ats' ? `a team had beaten that game's spread number in ${k}+ of its previous 10 games, it covered` : `a team's previous 10 games had ${ins.over?'gone over':'stayed under'} that game's total ${k}+ times, the ${ins.over?'over':'under'} hit`;
+    return `<span class="verdict ${real?'real':'noise'}">${real?'Has held up':lo>0.524?'Small sample':'Likely noise'}</span>Since ${ins.mkt==='ats'?2004:2013}, when ${what} <b>${(p*100).toFixed(1)}%</b> of the time (${s.n.toLocaleString()} games). ${real?'':'Recent games against different opponents mostly tell the books what they already priced in, so a strong hit rate alone has not been a reason to bet.'}`; }
   if (ins.mkt==='su') return `<span class="verdict noise">Priced in</span>Winning streaks are already built into the moneyline, since the market knows who's good. The question is only whether the price is right; see fair win above.`;
   if (ins.mkt==='ou' && ins.kind==='l10'){ const over = ins.text.startsWith('The over'), k = over ? ins.w : ins.n-ins.w, s={c:0,n:0};
     for (let i=0;i<=10;i++) if (over ? i>=ins.w : i<=ins.w){ s.c+=OU10[i].c; s.n+=OU10[i].n; }
@@ -1025,10 +1068,11 @@ function insightCard(ins, g){
   const color = (DATA.teams[ins.id]||[])[3] || 'var(--muted)';
   let bet = '', fair = '';
   if (ins.mkt==='ats'){ if (veg===null) return null;
-    const side = ins.w*2 >= ins.n ? ins.id : ins.opp, spr = side===h ? -veg : veg;
+    const side = ins.kind==='hr' ? ins.id : (ins.w*2 >= ins.n ? ins.id : ins.opp), spr = side===h ? -veg : veg;
     if (pred!==null){ const pH = normCdf(FIT.w*(pred-veg)/FIT.sd); fair = `fair ${((side===h?pH:1-pH)*100).toFixed(1)}%`; }
     bet = `${esc(ab(side))} ${spreadTxt(spr)}`;
     return {bet, px:'−110', fair}; }
+  if (ins.kind==='hr' && ins.mkt==='ou') return {bet: `${ins.over?'Over':'Under'} ${ins.line}`, px:'−110', fair:''};
   if (ins.mkt==='ou'){ const t = T[gid]; if (t==null) return null;
     return {bet: `${ins.w*2>=ins.n?'Over':'Under'} ${t}`, px:'−110', fair:''}; }
   if (ins.mkt==='su'){ if (kh==null||ka==null) return null; const c = ins.id===h ? kh : ka;
@@ -1040,15 +1084,17 @@ function insightCard(ins, g){
 }
 function insightHtml(ins, g, b){
   const [gid,date,tm,h,a,neu,hs,as,pred,veg,mingp,kh,ka] = g, color = (DATA.teams[ins.id]||[])[3] || 'var(--muted)';
-  const avgTxt = ins.mkt==='ou' ? `, landing ${Math.abs(ins.avg).toFixed(1)} points ${ins.avg>=0?'over':'under'} the total on average`
+  const avgTxt = ins.kind==='hr' ? `, ${ins.mkt==='ou'?'by':'clearing it by'} ${Math.abs(ins.avg).toFixed(1)} points on average` : ins.mkt==='ou' ? `, landing ${Math.abs(ins.avg).toFixed(1)} points ${ins.avg>=0?'over':'under'} the total on average`
     : ins.mkt==='ats' ? `, ${ins.avg>=0?'beating':'missing'} the line by ${Math.abs(ins.avg).toFixed(1)} on average` : `, by ${ins.avg.toFixed(1)} points on average`;
   const sig = signalCheck(ins), pill = sig.slice(0, sig.indexOf('</span>')+7), rest = sig.slice(sig.indexOf('</span>')+7);
   return `<div class="icard">
     <div class="ih"><b><span class="dot" style="background:${color}"></span>${esc(nm(ins.id))}</b>
       <span class="note tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
     <div class="it">${esc(ins.text)}${avgTxt}.</div>
+    ${ins.rates ? `<div class="rates">${[['L5',ins.rates.L5],['L10',ins.rates.L10],['L20',ins.rates.L20],[seasonOf(date),ins.rates.season],['H2H',ins.rates.h2h]].filter(([,r])=>r&&r.n).map(([l,r])=>{
+      const q=r.k/r.n; return `<span>${l}<b class="${q>=0.7?'hi':q<=0.3?'lo':''}">${r.n<5&&l!=='L5'?r.k+'/'+r.n:Math.round(q*100)+'%'}</b></span>`; }).join('')}</div>` : ''}
     <div class="ib"><span>${b.bet}${b.fair?` <span class="note">${b.fair}</span>`:''}</span><span class="px">${b.px}</span></div>
-    <div class="strip" title="Green means this card's bet would have hit">${ins.list.map(x=>{ const hit = (x.cover>0) === (ins.w*2>=ins.n);
+    <div class="strip" title="Green means this card's bet would have hit">${ins.list.map(x=>{ const hit = ins.kind==='hr' ? x.cover>0 : (x.cover>0) === (ins.w*2>=ins.n);
       return `<i class="${!x.cover?'':hit?'w':'l'}" title="${fmtDate(x.date)}"></i>`; }).join('')}</div>
     <details><summary>${pill} <span style="text-decoration:underline">signal check</span></summary><div style="margin-top:6px">${rest}</div></details>
   </div>`;
@@ -1057,7 +1103,7 @@ function renderInsights(games){
   const all = [];
   for (const g of games){ const [gid,date,tm,h,a] = g;
     for (const [id,opp] of [[h,a],[a,h]]){
-      const cands = [...(fmkt==='all'||fmkt==='ats' ? insightsFor(id,opp,g) : []), ...(fmkt==='all'||fmkt==='ou' ? ouInsightsFor(id,opp,g) : []),
+      const cands = [...hrInsightsFor(id,opp,g).filter(x=>fmkt==='all'||fmkt===x.mkt), ...(fmkt==='all'||fmkt==='ats' ? insightsFor(id,opp,g) : []), ...(fmkt==='all'||fmkt==='ou' ? ouInsightsFor(id,opp,g) : []),
                      ...(fmkt==='all'||fmkt==='su' ? suInsightsFor(id,opp,g) : [])];
       for (const ins of cands){ const b = insightCard(ins, g); if (b) all.push({ins, g, b}); } } }
   all.sort((x,y)=>y.ins.z-x.ins.z);
