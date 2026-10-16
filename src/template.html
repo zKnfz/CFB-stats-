@@ -246,6 +246,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-finder" aria-selected="true">Game Finder</button>
     <button role="tab" id="tab-edges" aria-selected="false">Edges</button>
+    <button role="tab" id="tab-kalshi" aria-selected="false">Kalshi</button>
     <button role="tab" id="tab-ratings" aria-selected="false">Ratings</button>
     <button role="tab" id="tab-games" aria-selected="false">Games</button>
     <button role="tab" id="tab-feed" aria-selected="false">Trends</button>
@@ -282,6 +283,17 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
     <p class="note" id="fx-note"></p>
   </section>
 
+  <section id="p-kalshi" hidden>
+    <div class="panel">
+      <div class="chips" id="krange" role="group" aria-label="Show">
+        <button class="chip" data-kb="best" aria-pressed="true">Best side per game</button>
+        <button class="chip" data-kb="both" aria-pressed="false">Both sides</button>
+      </div>
+      <p class="note" style="margin:8px 0 0">Outlier's method, for Kalshi: the sportsbooks set the fair price (their moneylines with the vig removed, or the spread when there's no moneyline), and Kalshi is worth buying only when its price to buy, plus Kalshi's fee, is below that. This doesn't use the model, which hasn't beaten the books; positive EV here means Kalshi is cheaper than the books, not a prediction.</p>
+    </div>
+    <div class="tablebox fbox" style="margin-top:12px"><table class="tlog" id="kt"><thead></thead><tbody></tbody></table></div>
+    <p class="note" id="knote"></p>
+  </section>
   <section id="p-edges" hidden>
     <div class="panel">
       <div class="chips" id="erange" role="group" aria-label="Date range">
@@ -484,7 +496,7 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const P = DATA.params;
-const TABS = ['finder','edges','ratings','games','feed','tf','matchup','game','team','backtest','about'];
+const TABS = ['finder','edges','kalshi','ratings','games','feed','tf','matchup','game','team','backtest','about'];
 const $ = id => document.getElementById(id);
 let state = {season:Object.keys(DATA.seasons).sort().pop(), from:null, to:null, conf:'All', prior:true, sort:'rating', dir:-1, open:null, preset:'all'};
 let current = null;
@@ -1304,8 +1316,9 @@ function feedCard(g){
     const bm = base + FIT.w*(pred-base), pH = winP(bm);
     const stale = veg!==null && Math.abs(kh/(kh+ka) - winP(veg)) > 0.12;
     const fee = c => 0.07*c*(1-c);  // Kalshi taker fee per $1 contract
-    const evH = pH/(kh/100+fee(kh/100))-1, evA = (1-pH)/(ka/100+fee(ka/100))-1, homeSide = evH>=evA;
-    const p = homeSide?pH:1-pH, c = (homeSide?kh:ka)/100, cf = c+fee(c), ev = homeSide?evH:evA, k = Math.max(0,(p-cf)/(1-cf))/4;
+    const kb = (DATA.kbuy||{})[gid], bH = kb && kb[0]!=null ? kb[0] : kh, bA = kb && kb[1]!=null ? kb[1] : ka;  // real buy prices when we have them
+    const evH = pH/(bH/100+fee(bH/100))-1, evA = (1-pH)/(bA/100+fee(bA/100))-1, homeSide = evH>=evA;
+    const p = homeSide?pH:1-pH, c = (homeSide?bH:bA)/100, cf = c+fee(c), ev = homeSide?evH:evA, k = Math.max(0,(p-cf)/(1-cf))/4;
     if (stale) bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><span class="note">${esc(ab(h))} ${kh}¢ / ${esc(ab(a))} ${ka}¢ doesn't match the books (${esc(ab(h))} about ${Math.round(winP(veg)*100)}%), likely a stale thinly traded price, so no EV shown.</span></div></div>`);
     else { best = best===null ? ev : Math.max(best, ev);
     bets.push(`<div class="fbet"><div><div class="k">Moneyline, Kalshi</div><b>${esc(ab(homeSide?h:a))} ${(c*100).toFixed(0)}¢</b> ${sparkline(DATA.kmove&&DATA.kmove[gid], !homeSide)}</div><div class="note" style="text-align:right">pays $1, after fee</div>
@@ -2337,6 +2350,42 @@ function renderTrack(){ const box = $('trk'); if (!box) return; const R = trkRow
         <td>${r.done?`${esc(ab(r.a))} ${g[7]}, ${esc(ab(r.h))} ${g[6]}`:'<span class="note">upcoming</span>'}</td><td class="${r.covOpen>0?'W':r.covOpen<0?'L':''}">${r.covOpen==null?'':r.covOpen>0?'Cover':r.covOpen<0?'Miss':'Push'}</td><td class="l note">${r.logged.replace('T',' ').replace('Z',' UTC')}</td></tr>`; }).join('')
   }</tbody></table></div>`;
   box.innerHTML = `<div class="panel">${kg}<p class="note" style="margin:8px 0 0">Since ${fmtDate(first)}, every game in the coming week is logged as soon as it has a line (runs are every 3 hours), with the model's number at that same moment, and never edited afterwards (tracking.jsonl in the repo). The bet is the model's side when it disagrees with the logged line by 1+ points. This is the honest version of the opening line backtest: there the model sometimes knew about games the opener didn't, and with the model one game older the backtest drops from 55% to about 51%. Break even at −110 is 52.4%. ▲ means the line then moved toward the model before kickoff. It takes a few hundred graded games before a real edge clears 52.4%.</p>${tbl}</div>`; }
+
+// ---------- Kalshi board: Kalshi's buy price vs the books' fair price ----------
+let KB = 'best';
+const kfee = c => 0.07*c*(1-c);  // Kalshi taker fee per $1 contract (rounded up to the cent per order); resting limit orders pay less
+function kalshiRows(){ const KBY = DATA.kbuy || {}, out = [];
+  for (const g of DATA.games){ if (g[6]!==null) continue; const b = KBY[g[0]]; if (!b) continue; const v = gameView(g);
+    let pH = null, src = null;
+    if (v.mlH!=null && v.mlA!=null){ pH = devigPower(amProb(v.mlH), amProb(v.mlA)); src = 'Books ML, no vig'; }
+    else if (v.spread!=null){ pH = winP(v.spread); src = 'From the spread'; }
+    const sides = [[v.h, b[0], b[2], pH], [v.a, b[1], b[3], pH==null?null:1-pH]].map(([id, buy, vol, p])=>{
+      if (buy==null) return null; const c = buy/100, cf = c + kfee(c);
+      const ev = p==null ? null : p/cf - 1, edge = p==null ? null : (p - c)*100, kelly = p==null ? null : Math.max(0, (p - cf)/(1 - cf))/4;
+      const pm = v.pModelH==null ? null : (id===v.h ? v.pModelH : 1-v.pModelH);
+      return {v, g, id, opp: id===v.h ? v.a : v.h, buy, vol, p, src, ev, edge, kelly, pm, off: p!=null && Math.abs(edge)>12, tail: buy<5 || buy>95}; }).filter(Boolean);
+    if (KB==='both') out.push(...sides);
+    else { const best = sides.filter(x=>x.ev!=null && !x.tail).sort((a,b)=>b.ev-a.ev)[0] || sides[0]; if (best) out.push(best); } }
+  const rank = r => r.ev==null ? -9 : (r.off || r.tail) ? r.ev - 5 : r.ev;  // far off the books, and 1 to 4¢ or 96 to 99¢ prices, sort last
+  return out.sort((a,b)=>rank(b)-rank(a)); }
+// remove the vig the "power" way: find k so the two implied chances raised to k sum to 1. Unlike scaling both down evenly,
+// it trims longshots more than favorites, matching how books pad longshot prices (the favorite longshot bias)
+function devigPower(a, b){ let lo = 0.5, hi = 3; for (let i=0;i<60;i++){ const k = (lo+hi)/2; (Math.pow(a,k)+Math.pow(b,k) > 1) ? lo = k : hi = k; } const k = (lo+hi)/2; return Math.pow(a,k); }
+function renderKalshi(){ const R = kalshiRows(), km = DATA.kmove || {};
+  $('kt').querySelector('thead').innerHTML = `<tr><th class="l">Game</th><th class="l">Buy</th><th title="Cheapest way to get this side on Kalshi now: YES at the ask, or NO on the other side">Kalshi price</th><th title="Sportsbook consensus win chance with the vig removed">Fair</th><th title="Fair minus Kalshi price, in cents">Edge</th><th title="Expected return per $1 after Kalshi's taker fee, if the books' fair price is right">EV after fee</th><th title="A quarter of the Kelly stake, as a share of bankroll">¼ Kelly</th><th title="This site's model, for context only: it hasn't beaten the books">Model</th><th title="Contracts traded in the last 24 hours">24h vol</th><th class="l">Kalshi price, ${'last snapshots'}</th></tr>`;
+  $('kt').querySelector('tbody').innerHTML = R.length ? R.map(r=>{ const mv = km[r.v.gid], flip = r.id!==r.v.h;
+    return `<tr><td class="l"><span class="tmlink glink" data-gid="${r.v.gid}" tabindex="0" role="link">${esc(ab(r.v.a))} ${r.v.neu?'vs':'@'} ${esc(ab(r.v.h))} ›</span> <span class="note">${fmtDate(r.v.date,true)}${r.v.tm?' '+r.v.tm:''}</span></td>
+      <td class="l"><b>${teamLinkHtml(r.id, esc(ab(r.id)))}</b></td><td><b>${r.buy}¢</b></td>
+      <td>${r.p==null?'<span class="na">N/A</span>':`${(r.p*100).toFixed(1)}¢ <span class="note">${esc(r.src)}</span>`}</td>
+      <td class="${r.edge==null?'':r.edge>0?'W':'L'}">${r.edge==null?'<span class="na">N/A</span>':(r.edge>0?'+':'')+r.edge.toFixed(1)+'¢'}</td>
+      <td>${r.ev==null?'<span class="na">N/A</span>':`<span class="cell ${r.off||r.tail?'na':r.ev>0.02?'hg2':r.ev>0?'hg1':''}" title="${r.off?'More than 12¢ off the books: usually a thin market or news the books already have. Check the order book depth.':r.tail?'Priced under 5¢ or over 95¢: a few cents of edge turns into a huge percentage, fair prices for longshots are the least reliable, and these markets are thin.':''}">${sgnPct(r.ev)}${r.off||r.tail?' ⚠':''}</span>`}</td>
+      <td>${r.kelly==null||r.kelly<=0?'<span class="note">0</span>':(r.kelly*100).toFixed(1)+'%'}</td>
+      <td class="note">${r.pm==null?'N/A':(r.pm*100).toFixed(0)+'%'}</td><td class="note">${r.vol!=null?Math.round(r.vol).toLocaleString():'N/A'}</td>
+      <td class="l">${mv&&mv.length>1?sparkline(mv, flip):''}</td></tr>`; }).join('')
+    : `<tr><td colspan="10" class="empty">No upcoming games have a Kalshi market right now.</td></tr>`;
+  const pos = R.filter(r=>r.ev>0 && !r.off && !r.tail).length;
+  $('knote').innerHTML = `${R.length} Kalshi ${KB==='both'?'sides':'games'}, ${pos} cheaper than the books' fair price after the fee. Kalshi prices refresh with each rebuild (every 3 hours), so check the live price before buying. The fee shown is Kalshi's taker fee (7% × price × (1 − price) per contract); a resting limit order pays less, which raises EV. ⚠ marks prices more than 12¢ off the books (usually a thin market, so check the order book depth) and prices under 5¢ or over 95¢ (tiny edges look huge in percent, and longshot fair prices are the least reliable); both sort to the bottom. The vig is removed with the power method, which trims longshots more than favorites, because books pad longshot prices the most. Fair prices assume the books are right, which is the bet Outlier makes too; the site's model is shown for context but not used, since it hasn't beaten closing lines.`; }
+$('krange').addEventListener('click', e=>{ const b = e.target.closest('[data-kb]'); if (!b) return; KB = b.dataset.kb; for (const x of $('krange').children) x.setAttribute('aria-pressed', x===b); renderKalshi(); });
 function renderEdges(){
   if (!current) return; renderTrack();
   const head = (cols) => `<tr>${cols.map(([l,t,c])=>`<th class="${c||''}" title="${esc(t||'')}">${l}</th>`).join('')}</tr>`;
@@ -2511,7 +2560,7 @@ function syncControls(){
   $('conf').innerHTML = ['All',...confs].map(c=>`<option ${c===state.conf?'selected':''}>${esc(c)}</option>`).join('');
   $('asof').innerHTML = `Data through<br><b>${fmtDate(hi)}</b>`;
 }
-function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); renderEdges(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
+function refresh(){ compute(); renderTable(); renderMatchup(); renderFinder(); renderEdges(); renderKalshi(); if (GV.gid && !$('p-game').hidden) renderGame(); if (TV.id && !$('p-team').hidden) renderTeam(); }
 function showTab(t){ for (const x of TABS){ const on = x===t; $('tab-'+x).setAttribute('aria-selected',on); $('p-'+x).hidden=!on; }
   if (t==='tf' && !TFS) renderTF(); }
 // one handler for team and game links anywhere on the page

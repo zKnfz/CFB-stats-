@@ -1,7 +1,11 @@
 """Pull live NCAAF moneyline odds from Kalshi and merge them into every upcoming
 (unplayed) game in site_data.json, as two more fields per game row: kalshi_home_pct,
-kalshi_away_pct (both null if unmatched or the fetch failed). No API key needed for
-market data. Run this after export3.py, before build_page.py.
+kalshi_away_pct (both null if unmatched or the fetch failed; a midpoint style price for display).
+Also 'kbuy': {gid: [home buy, away buy, home 24h volume, away 24h volume]}: the cheapest price to
+actually get each team, in cents. Buying a team is either YES on its market at the ask or NO on the
+other team's market at 100 minus that market's bid, whichever is cheaper. EV on the page uses these.
+Also logs what Kalshi's college spread and total series look like (PROBE_SERIES), so they can be
+added once their format is known. No API key needed for market data. Run after export3.py.
 """
 import sys, json, unicodedata, os, datetime
 sys.path.insert(0, '.')
@@ -25,10 +29,13 @@ def norm(s):
         s = s[:-3] + " state"
     return s
 
-def fetch_markets():
+PROBE_SERIES = ["KXNCAAFSPREAD", "KXNCAAFTOTAL"]
+
+
+def fetch_markets(series="KXNCAAFGAME"):
     all_markets, cursor = [], None
     while True:
-        qs = "series_ticker=KXNCAAFGAME&limit=200" + (f"&cursor={cursor}" if cursor else "")
+        qs = f"series_ticker={series}&limit=200" + (f"&cursor={cursor}" if cursor else "")
         req = urllib.request.Request(
             f"https://api.elections.kalshi.com/trade-api/v2/markets?{qs}",
             headers={"User-Agent": "Mozilla/5.0"})
@@ -43,6 +50,7 @@ def fetch_markets():
 def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     site['games'] = [g[:11] for g in site['games']]  # idempotent: drop any kalshi fields from a prior run
+    site['kbuy'] = {}
     our_teams = sorted(set(v[0] for v in site['teams'].values()))
     norm_to_our = {norm(t): t for t in our_teams}
     our_to_id = {v[0]: int(k) for k, v in site['teams'].items()}
@@ -75,6 +83,7 @@ def main():
             continue
         teams = {}
         vols = {}
+        quotes = {}
         ok = True
         for m in ms:
             name = match_team(m["yes_sub_title"])
@@ -87,6 +96,7 @@ def main():
             pct = (bid + ask) / 2 * 100 if bid > 0 and ask < 1 and ask - bid <= 0.10 else (last * 100 if vol > 0 and last > 0 else (bid + ask) / 2 * 100)
             teams[name] = round(pct, 1)
             vols[name] = vol
+            quotes[name] = (bid, ask)
         if not ok or len(teams) != 2:
             continue
         ids = frozenset(our_to_id[n] for n in teams)
@@ -98,6 +108,11 @@ def main():
         away_name = site['teams'][str(g[4])][0]
         g += [teams[home_name], teams[away_name]]
         matched += 1
+        # cheapest way to own each side: YES on it at the ask, or NO on the other side at 1 minus its bid
+        def buy(me, other):
+            opts = [q for q in (quotes[me][1], 1 - quotes[other][0] if quotes[other][0] > 0 else None) if q is not None and 0 < q < 1]
+            return round(min(opts) * 100, 1) if opts else None
+        site.setdefault('kbuy', {})[str(g[0])] = [buy(home_name, away_name), buy(away_name, home_name), vols[home_name], vols[away_name]]
         # log a snapshot now, so line movement over time becomes buildable going forward,
         # even without historical opening lines
         snapshot_lines.append(json.dumps({
@@ -133,6 +148,15 @@ def main():
             g.append(None)
 
     print(f"{len(active)} active Kalshi markets, {matched} matched to upcoming games")
+    for series in PROBE_SERIES:  # what do Kalshi's college spread and total markets look like? (log only)
+        try:
+            ms = fetch_markets(series)
+            print(f"probe {series}: {len(ms)} active markets")
+            for m in ms[:3]:
+                print("  ", {k: m.get(k) for k in ("ticker", "event_ticker", "title", "subtitle", "yes_sub_title", "no_sub_title",
+                                                  "floor_strike", "cap_strike", "strike_type", "yes_bid_dollars", "yes_ask_dollars", "volume_24h_fp")})
+        except Exception as e:
+            print(f"probe {series} failed:", e)
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 if __name__ == "__main__":
