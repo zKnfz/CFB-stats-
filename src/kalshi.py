@@ -7,7 +7,7 @@ other team's market at 100 minus that market's bid, whichever is cheaper. EV on 
 Also logs what Kalshi's college spread and total series look like (PROBE_SERIES), so they can be
 added once their format is known. No API key needed for market data. Run after export3.py.
 """
-import sys, json, unicodedata, os, datetime
+import sys, json, unicodedata, os, datetime, time
 sys.path.insert(0, '.')
 from collections import defaultdict
 import urllib.request
@@ -149,14 +149,22 @@ def main():
 
     print(f"{len(active)} active Kalshi markets, {matched} matched to upcoming games")
     for series in PROBE_SERIES:  # what do Kalshi's college spread and total markets look like? (log only)
+        ms = None
+        for wait in (3, 10):  # Kalshi rate limits bursts (HTTP 429), so pause before each try
+            time.sleep(wait)
+            try:
+                ms = fetch_markets(series); break
+            except Exception as e:
+                print(f"probe {series} failed:", e)
         try:
-            ms = fetch_markets(series)
+            if ms is None:
+                continue
             print(f"probe {series}: {len(ms)} active markets")
             for m in ms[:3]:
                 print("  ", {k: m.get(k) for k in ("ticker", "event_ticker", "title", "subtitle", "yes_sub_title", "no_sub_title",
                                                   "floor_strike", "cap_strike", "strike_type", "yes_bid_dollars", "yes_ask_dollars", "volume_24h_fp")})
         except Exception as e:
-            print(f"probe {series} failed:", e)
+            print(f"probe {series} print failed:", e)
     json.dump(site, open(DATA_DIR + '/site_data.json', 'w'), separators=(',', ':'))
 
 if __name__ == "__main__":
