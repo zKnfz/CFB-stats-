@@ -56,8 +56,13 @@ jobs:
           if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl data/preseason.json data/lines_hist.json)" ]; then
             git add gridiron-t-rank.html kalshi_history.jsonl data/preseason.json data/lines_hist.json
             git commit -m "Automated rebuild with latest data"
-            # a code push can land while this run is going; replay this data commit on top of it
-            git pull --rebase origin "$GITHUB_REF_NAME"
+            # a code push can land while this run is going; replay this data commit on top of it.
+            # Generated files can conflict: keep this run's fresh copies (the odds log merges by union, see .gitattributes).
+            if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
+              git checkout --theirs -- gridiron-t-rank.html data/preseason.json data/lines_hist.json
+              git add gridiron-t-rank.html data/preseason.json data/lines_hist.json kalshi_history.jsonl
+              GIT_EDITOR=true git rebase --continue
+            fi
             git push
           else
             echo "No changes, skipping commit"
