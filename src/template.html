@@ -553,6 +553,39 @@ function teamLog(id, before){  // one team's lined games, from that team's side
             cover: Math.sign(margin-exp)};
   }).sort((x,y)=>x.date<y.date?-1:1);
 }
+// opponent strength: final T-Rank for past seasons (season N+1's prior is season N's final ratings), current T-Rank for this one
+const FINALRANK = (()=>{ const out = {}, B = P.beta;
+  for (let i=0;i<SEASONS.length-1;i++){ const pr = DATA.seasons[SEASONS[i+1]].prior||{};
+    const r = Object.entries(pr).map(([id,f])=>[+id, Object.keys(B).reduce((t,k)=>t+B[k]*(f[k][0]-f[k][1]),0)]).sort((a,b)=>b[1]-a[1]);
+    out[SEASONS[i]] = new Map(r.map(([id],j)=>[id,j+1])); }
+  return out; })();
+function rankOf(id, date){ const y = seasonOf(date);
+  if (y===SEASONS[SEASONS.length-1]) return current && current.byId.get(id) ? current.byId.get(id).ratingRk : null;
+  return FINALRANK[y] ? FINALRANK[y].get(id) ?? null : null; }
+const TIERS = [['vs T-Rank top 25',1,25],['vs T-Rank 26 to 50',26,50],['vs T-Rank 51+',51,999]];
+function situations(id, before){  // every finished game from this team's side, with the situation going into it
+  const gs = teamGames(id).filter(g=>g[1]<before).sort((x,y)=>x[1]<y[1]?-1:1), out = [];
+  gs.forEach((g,i)=>{ const home=g[3]===id, m = home?g[6]-g[7]:g[7]-g[6], exp = g[9]===null?null:(home?g[9]:-g[9]);
+    const prev = gs[i-1], rest = prev ? (new Date(g[1])-new Date(prev[1]))/864e5 : null;
+    const prevM = prev ? (prev[3]===id?prev[6]-prev[7]:prev[7]-prev[6]) : null;
+    out.push({date:g[1], opp: home?g[4]:g[3], oppRk: rankOf(home?g[4]:g[3], g[1]), margin:m, exp, cover: exp===null?null:Math.sign(m-exp),
+      offWin: prev && prevM>0 && rest<60, offLoss: prev && prevM<0 && rest<60, offBye: rest!==null && rest>=13 && rest<60}); });
+  return out;
+}
+function sitRows(id, opp, date){  // the splits, and which one applies to this game
+  const y = seasonOf(date), yi = SEASONS.indexOf(y), since2 = ALL.span[SEASONS[Math.max(0,yi-1)]][0];
+  const all = situations(id, date).filter(x=>x.date>=since2), oppRk = rankOf(opp, date);
+  const last = situations(id, '9999').filter(x=>x.date<date).slice(-1)[0];
+  const rest = last ? (new Date(date)-new Date(last.date))/864e5 : null, lastWin = last && last.margin>0;
+  const rows = TIERS.map(([lbl,lo,hi])=>({lbl, list: all.filter(x=>x.oppRk!==null&&x.oppRk>=lo&&x.oppRk<=hi), now: oppRk!==null&&oppRk>=lo&&oppRk<=hi, phrase:`vs T-Rank ${lo===1?'top 25':lo===26?'26 to 50':'51+'} teams`}));
+  rows.push({lbl:'Off a win', list: all.filter(x=>x.offWin), now: !!last && lastWin && rest<60, phrase:'coming off a win'});
+  rows.push({lbl:'Off a loss', list: all.filter(x=>x.offLoss), now: !!last && !lastWin && rest<60, phrase:'coming off a loss'});
+  rows.push({lbl:'Off a bye', list: all.filter(x=>x.offBye), now: rest!==null && rest>=13 && rest<60, phrase:'coming off a bye week'});
+  for (const r of rows){ const su = r.list; r.w = su.filter(x=>x.margin>0).length; r.l = su.length-r.w;
+    r.avg = su.length ? su.reduce((t,x)=>t+x.margin,0)/su.length : null;
+    const a = su.filter(x=>x.cover); r.aw = a.filter(x=>x.cover>0).length; r.al = a.filter(x=>x.cover<0).length; r.ats = a.filter(x=>x.cover!==0); }
+  return {rows, oppRk};
+}
 function ats(list){ let w=0,l=0,p=0; for (const x of list) x.cover>0?w++:x.cover<0?l++:p++; return {w,l,p}; }
 function atsFmt(r){ const n=r.w+r.l; if (!n && !r.p) return '<span class="note">none</span>';
   return `${r.w}-${r.l}${r.p?'-'+r.p:''}${n?` <span class="note">${Math.round(100*r.w/n)}%</span>`:''}`; }
@@ -623,7 +656,15 @@ function renderTrends(A, B, site, ratingA){
         When the model's pregame pick disagreed with the closing line by ${bkLbl} points, its side covered <b>${mAll.n?pc(mAll.p):'n/a'}</b> of ${mAll.n.toLocaleString()} games (all years)
         and <b>${mTest.n?pc(mTest.p):'n/a'}</b> of ${mTest.n} in the 2025+ test years. <span class="note">Break even at −110 is 52.4%. The all years number includes seasons the model was tuned on, so it runs optimistic; test years are the honest one, and small samples swing a lot.</span></p>`;
   }
-  box.innerHTML = `<h3 style="margin:0 0 8px">Line history</h3>${lineHtml}${atsTable}${h2hTable}
+  const sa = sitRows(A.id, B.id, muDate || todayET()), sb = sitRows(B.id, A.id, muDate || todayET());
+  const cell = r => r.list.length ? `${r.w}-${r.l}${r.avg!==null?` <span class="note">${r.avg>=0?'+':''}${r.avg.toFixed(1)}</span>`:''}<br><span class="note">ATS</span> ${r.aw+r.al?`${r.aw}-${r.al}`:'none'}` : '<span class="note">none</span>';
+  const sitTable = `<div style="overflow-x:auto;margin-top:12px"><table class="cmp"><thead><tr><th class="l">Situations, 2 seasons</th><th>${esc(A.abbr)}${sa.oppRk?` <span class="note">vs #${sa.oppRk}</span>`:''}</th><th>${esc(B.abbr)}${sb.oppRk?` <span class="note">vs #${sb.oppRk}</span>`:''}</th></tr></thead><tbody>
+    ${sa.rows.map((r,i)=>{ const rb = sb.rows[i];
+      const mark = x => x.now ? 'background:var(--good-bg);font-weight:600' : '';
+      return `<tr><td class="l">${r.lbl}</td><td style="${mark(r)}">${cell(r)}</td><td style="${mark(rb)}">${cell(rb)}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note">Straight up record with average margin, then record against the spread. Highlighted cells are the situation each team is in for this game. Top 25 means this site's T-Rank (final for past seasons, current for this one), not the AP poll.</p>`;
+  box.innerHTML = `<h3 style="margin:0 0 8px">Line history</h3>${lineHtml}${atsTable}${sitTable}${h2hTable}
     <p class="note">Against the spread uses each game's closing line and only games before ${muDate?fmtDate(muDate):'today'}. A cover means beating the line, a push means landing exactly on it.</p>`;
 }
 function btSegOf(year){
@@ -965,6 +1006,16 @@ function ouInsightsFor(id, opp, g){
   if (id < opp && extreme(hh,3)){ const [k]=cnt(hh); add(hh, `The ${dirOf(hh)} has hit in ${k} of the last ${hh.length} meetings between ${name} and ${nm(opp)}`, 'h2h'); }
   return out;
 }
+function sitInsightsFor(id, opp, g){
+  const [gid,date,tm,h,a,neu,hs,as,pred,veg] = g, name = nm(id), out = [], {rows, oppRk} = sitRows(id, opp, date);
+  for (const r of rows){ if (!r.now) continue;
+    const n = r.ats.length, w = r.aw;
+    if (veg!==null && n>=4 && Math.abs(w/n-0.5)>=0.25)
+      out.push({id, opp, gid, mkt:'ats', kind:'sit', text:`${name} is ${w}-${n-w} against the spread ${r.phrase} over the last two seasons`, w, n,
+        avg: r.ats.reduce((t,x)=>t+x.margin-x.exp,0)/n, list: r.ats, z: Math.abs(w-n/2)/Math.sqrt(n/4),
+        tag: oppRk && r.phrase.startsWith('vs') ? ` ${nm(opp)} is T-Rank #${oppRk}.` : ''}); }
+  return out;
+}
 function suInsightsFor(id, opp, g){
   const name = nm(id), l10 = teamSuLog(id, g[1]).slice(-10); if (l10.length<10) return [];
   const k = l10.filter(x=>x.cover>0).length; if (k<8) return [];
@@ -1090,7 +1141,7 @@ function insightHtml(ins, g, b){
   return `<div class="icard">
     <div class="ih"><b><span class="dot" style="background:${color}"></span>${esc(nm(ins.id))}</b>
       <span class="note tmlink" data-id="${h}" data-opp="${a}" data-site="${neu?0:1}" data-date="${date}"${kh!=null?` data-ka="${kh}" data-kb="${ka}"`:''}${veg!==null?` data-line="${-veg}"`:''}${pred!==null?` data-pred="${pred}"`:''} tabindex="0" role="button">${esc(ab(a))} ${neu?'vs':'@'} ${esc(ab(h))} · ${fmtDate(date,true)}${tm?' '+tm:''} ›</span></div>
-    <div class="it">${esc(ins.text)}${avgTxt}.</div>
+    <div class="it">${esc(ins.text)}${avgTxt}.${ins.tag?`<span class="note" style="font-weight:400">${esc(ins.tag)}</span>`:''}</div>
     ${ins.rates ? `<div class="rates">${[['L5',ins.rates.L5],['L10',ins.rates.L10],['L20',ins.rates.L20],[seasonOf(date),ins.rates.season],['H2H',ins.rates.h2h]].filter(([,r])=>r&&r.n).map(([l,r])=>{
       const q=r.k/r.n; return `<span>${l}<b class="${q>=0.7?'hi':q<=0.3?'lo':''}">${r.n<5&&l!=='L5'?r.k+'/'+r.n:Math.round(q*100)+'%'}</b></span>`; }).join('')}</div>` : ''}
     <div class="ib"><span>${b.bet}${b.fair?` <span class="note">${b.fair}</span>`:''}</span><span class="px">${b.px}</span></div>
@@ -1104,7 +1155,7 @@ function renderInsights(games){
   for (const g of games){ const [gid,date,tm,h,a] = g;
     for (const [id,opp] of [[h,a],[a,h]]){
       const cands = [...hrInsightsFor(id,opp,g).filter(x=>fmkt==='all'||fmkt===x.mkt), ...(fmkt==='all'||fmkt==='ats' ? insightsFor(id,opp,g) : []), ...(fmkt==='all'||fmkt==='ou' ? ouInsightsFor(id,opp,g) : []),
-                     ...(fmkt==='all'||fmkt==='su' ? suInsightsFor(id,opp,g) : [])];
+                     ...(fmkt==='all'||fmkt==='ats' ? sitInsightsFor(id,opp,g) : []), ...(fmkt==='all'||fmkt==='su' ? suInsightsFor(id,opp,g) : [])];
       for (const ins of cands){ const b = insightCard(ins, g); if (b) all.push({ins, g, b}); } } }
   all.sort((x,y)=>y.ins.z-x.ins.z);
   const shown = all.slice(0, 60);
