@@ -285,6 +285,8 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
       </div>
       <p class="note" style="margin:8px 0 0">Ranked by how far this site's model is from the market. These are model edges, places where the model disagrees, not picks: in recent seasons that disagreement has not beaten closing lines, and each row shows how its edge size has done in 2025+ games. The "why" column splits the model's margin into its ingredients from the current ratings.</p>
     </div>
+    <h3 class="sec">Forward test: model vs opening lines</h3>
+    <div id="trk"></div>
     <h3 class="sec">Watchlist</h3>
     <div class="tablebox"><table class="tlog" id="wlg2"><thead></thead><tbody></tbody></table></div>
     <h3 class="sec">Spread edges</h3>
@@ -2220,8 +2222,39 @@ function edgeRows(kind){
       out.push({v, side, e: Math.abs(dH)*100, mkt: price, model: `${(pm*100).toFixed(1)}%`, pModel: pm, pMkt: pk, conf: {lbl:'Untested', cls:'na', txt:'No history of moneylines to test this against; sportsbook moneylines are only stored for the current season.'}}); } }
   return out.sort((a,b)=>b.e-a.e);
 }
+
+// ---------- forward test: each game's line logged with the model's number at the same moment (tracking.jsonl, track.py) ----------
+// Entries are never edited after logging, so this record can't be fit after the fact, and the model never knows
+// more than the line did. A "bet" is the model's side whenever it disagreed with the logged line by 1+ points.
+const TRK_MIN = 1;
+function trkRows(){ const GI = new Map(DATA.games.map(g=>[g[0], g]));
+  return (DATA.track||[]).map(([gid,date,h,a,open,model,line,logged])=>{ const g = GI.get(gid), e = line==null ? 0 : model-line, side = Math.abs(e)>=TRK_MIN ? Math.sign(e) : 0;
+    const done = g && g[6]!==null, m = done ? g[6]-g[7] : null, close = g ? g[9] : null;
+    return {gid, date, h, a, open, line, model, logged, e, side, pick: side>0 ? h : side<0 ? a : null, done, m, close,
+      covOpen: done && side ? Math.sign((m-line)*side) : null, covClose: done && side && close!=null ? Math.sign((m-close)*side) : null,
+      clv: side && close!=null ? (close-line)*side : null}; }); }
+function renderTrack(){ const box = $('trk'); if (!box) return; const R = trkRows();
+  if (!R.length){ box.innerHTML = `<div class="panel"><p class="note">Nothing logged yet. Starting now, every rebuild logs each game in the coming week as soon as it has a line, with the model's number at that same moment; results show up here as games are played.</p></div>`; return; }
+  const bets = R.filter(r=>r.side), g = bets.filter(r=>r.done), cnt = f => { let w=0,l=0,p=0; for (const r of g){ const c = f(r); if (c==null) continue; c>0?w++:c<0?l++:p++; } return {w,l,p,n:w+l}; };
+  const ro = cnt(r=>r.covOpen), rc = cnt(r=>r.covClose), mv = bets.filter(r=>r.clv!=null && (r.done || r.close!==r.line)), tw = mv.filter(r=>r.clv>0).length, ta = mv.filter(r=>r.clv<0).length;
+  const pct = r => r.n ? (100*r.w/r.n).toFixed(1)+'%' : 'N/A', ci = r => r.n ? wilsonCI(r.w, r.n).map(x=>(x*100).toFixed(0)).join(' to ')+'%' : '';
+  const first = R.reduce((m,r)=>r.logged<m?r.logged:m, R[0].logged).slice(0,10);
+  const kg = `<div class="kgrid">
+    <div><div class="k">Vs the logged line <span class="src h">FORWARD</span></div><b>${ro.w}-${ro.l}${ro.p?'-'+ro.p:''}</b><div class="s">${pct(ro)} ${ro.n?`(95% range ${ci(ro)})`:''}</div></div>
+    <div><div class="k">Vs the closing line</div><b>${rc.w}-${rc.l}${rc.p?'-'+rc.p:''}</b><div class="s">${pct(rc)}</div></div>
+    <div><div class="k">Line moved toward model</div><b>${mv.length?Math.round(100*tw/mv.length)+'%':'N/A'}</b><div class="s">${mv.length?`away ${Math.round(100*ta/mv.length)}%, avg ${f1(mv.reduce((t,r)=>t+r.clv,0)/mv.length)} pts, ${mv.length} games`:'no moves yet'}</div></div>
+    <div><div class="k">Logged</div><b>${R.length}</b><div class="s">${bets.length} with a 1+ point lean, ${bets.length-g.length} not played yet</div></div></div>`;
+  const recent = [...R].sort((x,y)=>x.date<y.date?1:x.date>y.date?-1:Math.abs(y.e)-Math.abs(x.e)).slice(0, 40);
+  const tbl = `<div class="tablebox" style="margin-top:10px"><table class="tlog"><thead><tr><th class="l">Game</th><th>Opened</th><th>Logged line</th><th>Model</th><th class="l">Lean</th><th>Close</th><th>Final</th><th>Result</th><th class="l">Logged</th></tr></thead><tbody>${
+    recent.map(r=>{ const sp = (x)=> x==null ? '<span class="na">N/A</span>' : x===0 ? 'PK' : `${esc(ab(x>0?r.h:r.a))} −${Math.abs(x).toFixed(1)}`;
+      const g = DATA.games.find(x=>x[0]===r.gid);
+      return `<tr><td class="l"><span class="tmlink glink" data-gid="${r.gid}" tabindex="0" role="link">${esc(ab(r.a))} @ ${esc(ab(r.h))} ›</span> <span class="note">${fmtDate(r.date,true)}</span></td><td>${sp(r.open)}</td><td>${sp(r.line)}</td><td>${sp(r.model)}</td>
+        <td class="l">${r.pick?`<b>${esc(ab(r.pick))}</b> +${Math.abs(r.e).toFixed(1)}`:'<span class="note">under 1 pt</span>'}</td><td>${sp(r.close)}${r.clv!=null&&r.clv!==0?` <span class="${r.clv>0?'W':'L'}">${r.clv>0?'▲':'▼'}</span>`:''}</td>
+        <td>${r.done?`${esc(ab(r.a))} ${g[7]}, ${esc(ab(r.h))} ${g[6]}`:'<span class="note">upcoming</span>'}</td><td class="${r.covOpen>0?'W':r.covOpen<0?'L':''}">${r.covOpen==null?'':r.covOpen>0?'Cover':r.covOpen<0?'Miss':'Push'}</td><td class="l note">${r.logged.replace('T',' ').replace('Z',' UTC')}</td></tr>`; }).join('')
+  }</tbody></table></div>`;
+  box.innerHTML = `<div class="panel">${kg}<p class="note" style="margin:8px 0 0">Since ${fmtDate(first)}, every game in the coming week is logged as soon as it has a line (runs are every 3 hours), with the model's number at that same moment, and never edited afterwards (tracking.jsonl in the repo). The bet is the model's side when it disagrees with the logged line by 1+ points. This is the honest version of the opening line backtest: there the model sometimes knew about games the opener didn't, and with the model one game older the backtest drops from 55% to about 51%. Break even at −110 is 52.4%. ▲ means the line then moved toward the model before kickoff. It takes a few hundred graded games before a real edge clears 52.4%.</p>${tbl}</div>`; }
 function renderEdges(){
-  if (!current) return;
+  if (!current) return; renderTrack();
   const head = (cols) => `<tr>${cols.map(([l,t,c])=>`<th class="${c||''}" title="${esc(t||'')}">${l}</th>`).join('')}</tr>`;
   const row = (r, cells) => `<tr><td class="l"><span class="tmlink glink" data-gid="${r.v.gid}" tabindex="0" role="link">${esc(ab(r.v.a))} ${r.v.neu?'vs':'@'} ${esc(ab(r.v.h))} ›</span> <span class="note">${fmtDate(r.v.date,true)}</span></td>${cells}<td><span class="cell ${r.conf.cls}" title="${esc(r.conf.txt)}">${r.conf.lbl}</span></td><td><button class="btn wlAdd" data-gid="${r.v.gid}" type="button" style="min-height:0;padding:2px 8px">${wlHas(r.v.gid)?'★':'☆'}</button></td></tr>`;
   const empty = n => `<tr><td colspan="${n}" class="empty">No upcoming games with both a market line and a model number in this range.</td></tr>`;
@@ -2239,7 +2272,7 @@ function renderEdges(){
     const pv = r.pModel*price - 1;
     return row(r, `<td class="l"><b>${teamLinkHtml(r.side, esc(ab(r.side)))}</b></td><td>${r.mkt}</td><td>${r.model}</td><td>${(r.pMkt*100).toFixed(1)}%</td><td>${edgeCell(r.e)}</td><td>${sgnPct(pv)}</td><td class="l" style="white-space:normal;min-width:260px">${whyMargin(r.v)}</td>`); }).join('') : empty(10);
   const o1 = OB.find(x=>x.b[0]===1&&x.b[1]===Infinity).test;
-  $('enote').innerHTML = `<b>Opening lines:</b> in 2025+ games where the model disagreed with the opener by a point or more (${o1.m}), the line moved toward the model ${Math.round(100*o1.tw/o1.m)}% of the time and away ${Math.round(100*o1.ta/o1.m)}%, and the model side covered the opener ${(100*o1.w/o1.n).toFixed(1)}% (break even 52.4%, 95% range ${wilsonCI(o1.w,o1.n).map(x=>(x*100).toFixed(1)).join(' to ')}%). The market tends to move the model's way, but by kickoff most of that gap is gone, so any edge lives at the open, and it is not proven yet. Model cover and model chance are the raw model's own numbers. The Trends tab's fair odds, which keep only the share of the model that has held up against closing lines, are about 50% for every spread right now. Totals spread: real scores land about ${TOTSD.toFixed(1)} points from the projected total on average (root mean square).`;
+  $('enote').innerHTML = `<b>Opening lines:</b> in 2025+ games where the model disagreed with the opener by a point or more (${o1.m}), the line moved toward the model ${Math.round(100*o1.tw/o1.m)}% of the time and away ${Math.round(100*o1.ta/o1.m)}%, and the model side covered the opener ${(100*o1.w/o1.n).toFixed(1)}% (break even 52.4%, 95% range ${wilsonCI(o1.w,o1.n).map(x=>(x*100).toFixed(1)).join(' to ')}%). The market tends to move the model's way, but by kickoff most of that gap is gone, so any edge lives at the open. Caution: some openers were posted before the previous week's games, which the model had already seen; with the model one game older the cover rate falls to about 51%. The forward test above has no such problem and is the real check. Model cover and model chance are the raw model's own numbers. The Trends tab's fair odds, which keep only the share of the model that has held up against closing lines, are about 50% for every spread right now. Totals spread: real scores land about ${TOTSD.toFixed(1)} points from the projected total on average (root mean square).`;
   renderWLG();
 }
 

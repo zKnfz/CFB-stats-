@@ -49,6 +49,7 @@ jobs:
           python3 export3.py
           python3 lines.py
           python3 kalshi.py
+          python3 track.py   # logs new openers with the model's number to tracking.jsonl (forward test)
           python3 preseason.py
           python3 build_page.py
 
@@ -56,14 +57,14 @@ jobs:
         run: |
           git config user.name "gtr-bot"
           git config user.email "gtr-bot@users.noreply.github.com"
-          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl data/preseason.json data/lines_hist.json)" ]; then
-            git add gridiron-t-rank.html kalshi_history.jsonl data/preseason.json data/lines_hist.json
+          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl data/preseason.json data/lines_hist.json)" ]; then
+            git add gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl data/preseason.json data/lines_hist.json
             git commit -m "Automated rebuild with latest data"
             # a code push can land while this run is going; replay this data commit on top of it.
-            # Generated files can conflict: keep this run's fresh copies (the odds log merges by union, see .gitattributes).
+            # Generated files can conflict: keep this run's fresh copies (the odds and tracking logs merge by union, see .gitattributes).
             if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
               git checkout --theirs -- gridiron-t-rank.html data/preseason.json data/lines_hist.json
-              git add gridiron-t-rank.html data/preseason.json data/lines_hist.json kalshi_history.jsonl
+              git add gridiron-t-rank.html data/preseason.json data/lines_hist.json kalshi_history.jsonl tracking.jsonl
               GIT_EDITOR=true git rebase --continue
             fi
             git push
