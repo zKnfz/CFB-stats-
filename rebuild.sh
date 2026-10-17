@@ -12,6 +12,7 @@ python3 qb.py
 python3 players.py
 python3 lines.py      # needs CFBD_API_KEY, skips gracefully if not
 python3 kalshi.py
+python3 kalshi_flags.py
 python3 track.py
 python3 preseason.py   # needs CFBD_API_KEY env var set, skips gracefully if not
 python3 build_page.py

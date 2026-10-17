@@ -291,6 +291,9 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
       </div>
       <p class="note" style="margin:8px 0 0">Outlier's method, for Kalshi: the sportsbooks set the fair price (their moneylines with the vig removed, or the spread when there's no moneyline), and Kalshi is worth buying only when its price to buy, plus Kalshi's fee, is below that. This doesn't use the model, which hasn't beaten the books; positive EV here means Kalshi is cheaper than the books, not a prediction.</p>
     </div>
+    <h3 class="sec">Track record</h3>
+    <div id="ktrack"></div>
+    <h3 class="sec">This week</h3>
     <div class="tablebox fbox" style="margin-top:12px"><table class="tlog" id="kt"><thead></thead><tbody></tbody></table></div>
     <p class="note" id="knote"></p>
   </section>
@@ -2325,7 +2328,9 @@ function edgeRows(kind){
 // more than the line did. A "bet" is the model's side whenever it disagreed with the logged line by 1+ points.
 const TRK_MIN = 1;
 function trkRows(){ const GI = new Map(DATA.games.map(g=>[g[0], g]));
-  return (DATA.track||[]).map(([gid,date,h,a,open,model,line,logged])=>{ const g = GI.get(gid), e = line==null ? 0 : model-line, side = Math.abs(e)>=TRK_MIN ? Math.sign(e) : 0;
+  return (DATA.track||[]).map(([gid,date,h,a,open,model,line,logged,lean,rule])=>{ const g = GI.get(gid), e = line==null ? 0 : model-line;
+    // the lean is frozen in the log since rule spread-v1; the first entries predate that field and get the same 1 point rule
+    const side = rule ? (lean==='home' ? 1 : lean==='away' ? -1 : 0) : (Math.abs(e)>=TRK_MIN ? Math.sign(e) : 0);
     const done = g && g[6]!==null, m = done ? g[6]-g[7] : null, close = g ? g[9] : null;
     return {gid, date, h, a, open, line, model, logged, e, side, pick: side>0 ? h : side<0 ? a : null, done, m, close,
       covOpen: done && side ? Math.sign((m-line)*side) : null, covClose: done && side && close!=null ? Math.sign((m-close)*side) : null,
@@ -2371,7 +2376,40 @@ function kalshiRows(){ const KBY = DATA.kbuy || {}, out = [];
 // remove the vig the "power" way: find k so the two implied chances raised to k sum to 1. Unlike scaling both down evenly,
 // it trims longshots more than favorites, matching how books pad longshot prices (the favorite longshot bias)
 function devigPower(a, b){ let lo = 0.5, hi = 3; for (let i=0;i<60;i++){ const k = (lo+hi)/2; (Math.pow(a,k)+Math.pow(b,k) > 1) ? lo = k : hi = k; } const k = (lo+hi)/2; return Math.pow(a,k); }
-function renderKalshi(){ const R = kalshiRows(), km = DATA.kmove || {};
+
+// ---------- Kalshi track record: frozen opportunities from kalshi_flags.jsonl, graded with later facts only ----------
+// kalshi_flags.py decides at the moment each opportunity appears and appends it, with every input and computed number,
+// to an append only log that CI refuses to rewrite. Nothing here recomputes fair price, EV or qualification: the page
+// shows the stored values and adds only what happened afterwards (the final score, and the last pregame Kalshi buy
+// price of that side from the price snapshots, for closing line value).
+function kTrack(){ const GI = new Map(DATA.games.map(g=>[g[0], g])), S = DATA.ksnap || {};
+  return (DATA.kflags||[]).map(f=>{ const g = GI.get(f.gid), snaps = S[f.gid] || [], k = f.side==='home' ? 1 : 2;
+    const after = snaps.filter(r=>r[0] >= f.ts.slice(0,16) && r[k]!=null), last = after.length ? after[after.length-1] : null;
+    const close = last ? last[k]/100 : null, done = !!g && g[6]!==null, won = done ? ((f.side==='home' ? g[6]-g[7] : g[7]-g[6]) > 0) : null;
+    return {f, g, id: f.team, c: f.buy, p: f.fair, ev: f.ev, ts: f.ts, cost: f.cost, close, clv: close==null ? null : (close - f.buy)*100, done, won,
+      profit: done ? (won ? 1-f.cost : -f.cost) : null}; }).sort((a,b)=>a.f.date<b.f.date?1:a.f.date>b.f.date?-1:0); }
+function renderKTrack(){ const T = kTrack(), box = $('ktrack'); if (!box) return;
+  if (!T.length){ box.innerHTML = `<div class="panel"><p class="note">Nothing graded yet. From now on, the first time a side on Kalshi is cheaper than the books' fair price after the fee, it's logged once with every input and number behind it, and never recomputed. Once the game is played it's graded here: did that team win, and did Kalshi's price keep rising before kickoff (closing line value).</p></div>`; return; }
+  const G = T.filter(x=>x.done), n = G.length, w = G.filter(x=>x.won).length, exp = G.reduce((t,x)=>t+x.p,0), paid = G.reduce((t,x)=>t+x.c,0);
+  const stake = G.reduce((t,x)=>t+x.cost,0), prof = G.reduce((t,x)=>t+x.profit,0), cv = T.filter(x=>x.clv!=null), up = cv.filter(x=>x.clv>0).length, dn = cv.filter(x=>x.clv<0).length;
+  const avgClv = cv.length ? cv.reduce((t,x)=>t+x.clv,0)/cv.length : null;
+  box.innerHTML = `<div class="panel"><div class="kgrid">
+    <div><div class="k">Record <span class="src h">LOGGED</span></div><b>${w}-${n-w}</b><div class="s">${n?`expected ${exp.toFixed(1)} wins at fair, ${paid.toFixed(1)} at the prices paid`:'none played yet'}</div></div>
+    <div><div class="k">Return after fees</div><b class="${prof>0?'W':prof<0?'L':''}">${stake?sgnPct(prof/stake):'N/A'}</b><div class="s">${stake?`${prof>=0?'+':'−'}$${Math.abs(prof).toFixed(2)} on $${stake.toFixed(2)}, 1 contract each`:''}</div></div>
+    <div><div class="k">Closing line value</div><b>${avgClv==null?'N/A':(avgClv>=0?'+':'−')+Math.abs(avgClv).toFixed(1)+'¢'}</b><div class="s">${cv.length?`price rose after entry ${up} times, fell ${dn}, of ${cv.length}`:''}</div></div>
+    <div><div class="k">Flagged</div><b>${T.length}</b><div class="s">${T.length-n} not played yet</div></div></div>
+    <p class="note" style="margin:8px 0 0">Each row was decided and frozen the moment it qualified (kalshi_flags.jsonl, append only; CI refuses any rebuild that changes an old line), using the books' prices and Kalshi's quotes at that moment. Nothing here is recomputed with newer odds, ratings or formulas; tap a time to see exactly why it qualified. Closing line value compares that buy price with the last pregame buy price; a price that keeps rising after you buy is the earliest sign the edge is real, long before the win record means anything. With ${n} played, the record is ${n<100?'mostly noise':'starting to mean something'}.</p>
+    <div class="tablebox" style="margin-top:10px"><table class="tlog"><thead><tr><th class="l">Game</th><th class="l">Bought</th><th>Price</th><th>Fair</th><th>EV</th><th>Last price</th><th>CLV</th><th>Result</th><th class="l">Logged (tap for why)</th></tr></thead><tbody>${
+      T.slice(0,40).map(x=>`<tr><td class="l"><span class="tmlink glink" data-gid="${x.g[0]}" tabindex="0" role="link">${esc(ab(x.g[4]))} @ ${esc(ab(x.g[3]))} ›</span> <span class="note">${fmtDate(x.g[1],true)}</span></td><td class="l"><b>${esc(ab(x.id))}</b></td>
+        <td>${(x.c*100).toFixed(0)}¢</td><td>${(x.p*100).toFixed(1)}¢</td><td>${sgnPct(x.ev)}</td><td>${x.close==null?'<span class="na">N/A</span>':(x.close*100).toFixed(0)+'¢'}</td>
+        <td class="${x.clv>0?'W':x.clv<0?'L':''}">${x.clv==null?'':(x.clv>0?'+':'')+x.clv.toFixed(0)+'¢'}</td><td class="${x.won?'W':x.done?'L':''}">${x.done?(x.won?'Won':'Lost'):'<span class="note">upcoming</span>'}</td>
+        <td class="l note"><details><summary>${esc(x.ts.slice(0,16).replace('T',' '))} UTC</summary>${kWhy(x.f)}</details></td></tr>`).join('')}</tbody></table></div></div>`; }
+function kWhy(f){  // the frozen reasons, exactly as logged
+  const q = f.quotes||{}, side = s => q[s] ? `${esc(ab(s==='home'?f.home:f.away))} bid ${(q[s].bid*100).toFixed(0)}¢ ask ${(q[s].ask*100).toFixed(0)}¢, 24h vol ${Math.round(q[s].vol24h||0)}` : '';
+  return `<div class="note" style="white-space:normal;min-width:240px">Rule ${esc(f.rule)}. ${side('home')}; ${side('away')}. Bought via ${f.buy_via==='yes_ask'?'YES at the ask':'NO on the other team at 1 minus its bid'}: ${(f.buy*100).toFixed(1)}¢ plus fee ${(f.fee*100).toFixed(2)}¢ = ${(f.cost*100).toFixed(2)}¢.
+    Fair ${(f.fair*100).toFixed(1)}¢ from ${f.fair_method==='books_ml_power'?`book moneylines ${f.books_ml.map(amTxt).join(' / ')} (power de-vig, k ${f.fair_param.k})`:`the spread ${f.spread} (logistic, K ${f.fair_param.wink})`}.
+    EV ${sgnPct(f.ev)}, edge ${f.edge_c>0?'+':''}${f.edge_c}¢, quarter Kelly ${(f.kelly_q*100).toFixed(1)}%. Limits: ${f.thresholds.min_c} to ${f.thresholds.max_c}¢, within ${f.thresholds.max_off_c}¢ of fair. Model ${f.model_pred==null?'N/A':f1(f.model_pred)} (context only).</div>`; }
+function renderKalshi(){ renderKTrack(); const R = kalshiRows(), km = DATA.kmove || {};
   $('kt').querySelector('thead').innerHTML = `<tr><th class="l">Game</th><th class="l">Buy</th><th title="Cheapest way to get this side on Kalshi now: YES at the ask, or NO on the other side">Kalshi price</th><th title="Sportsbook consensus win chance with the vig removed">Fair</th><th title="Fair minus Kalshi price, in cents">Edge</th><th title="Expected return per $1 after Kalshi's taker fee, if the books' fair price is right">EV after fee</th><th title="A quarter of the Kelly stake, as a share of bankroll">¼ Kelly</th><th title="This site's model, for context only: it hasn't beaten the books">Model</th><th title="Contracts traded in the last 24 hours">24h vol</th><th class="l">Kalshi price, ${'last snapshots'}</th></tr>`;
   $('kt').querySelector('tbody').innerHTML = R.length ? R.map(r=>{ const mv = km[r.v.gid], flip = r.id!==r.v.h;
     return `<tr><td class="l"><span class="tmlink glink" data-gid="${r.v.gid}" tabindex="0" role="link">${esc(ab(r.v.a))} ${r.v.neu?'vs':'@'} ${esc(ab(r.v.h))} ›</span> <span class="note">${fmtDate(r.v.date,true)}${r.v.tm?' '+r.v.tm:''}</span></td>

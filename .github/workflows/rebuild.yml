@@ -51,22 +51,39 @@ jobs:
           python3 players.py   # player game logs for props on game pages
           python3 lines.py
           python3 kalshi.py
+          python3 kalshi_flags.py   # appends each new Kalshi opportunity, frozen with its inputs, to kalshi_flags.jsonl
           python3 track.py   # logs new openers with the model's number to tracking.jsonl (forward test)
           python3 preseason.py
           python3 build_page.py
+
+      - name: Forward logs are append only
+        # tracking.jsonl, kalshi_history.jsonl and kalshi_flags.jsonl are forward tests: a rebuild may add lines,
+        # never change or drop one. Each committed file must still be an exact prefix of the new one.
+        run: |
+          for f in tracking.jsonl kalshi_history.jsonl kalshi_flags.jsonl; do
+            if git cat-file -e HEAD:"$f" 2>/dev/null; then
+              git show HEAD:"$f" > /tmp/old_log
+              n=$(stat -c%s /tmp/old_log)
+              if ! head -c "$n" "$f" | cmp -s - /tmp/old_log; then
+                echo "::error::$f: a committed line was changed or removed; forward logs are append only"
+                exit 1
+              fi
+            fi
+          done
+          echo "forward logs: only appended"
 
       - name: Commit updated page and odds history if changed
         run: |
           git config user.name "gtr-bot"
           git config user.email "gtr-bot@users.noreply.github.com"
-          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl data/preseason.json data/lines_hist.json)" ]; then
-            git add gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl data/preseason.json data/lines_hist.json
+          if [ -n "$(git status --porcelain -- gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl kalshi_flags.jsonl data/preseason.json data/lines_hist.json)" ]; then
+            git add gridiron-t-rank.html kalshi_history.jsonl tracking.jsonl kalshi_flags.jsonl data/preseason.json data/lines_hist.json
             git commit -m "Automated rebuild with latest data"
             # a code push can land while this run is going; replay this data commit on top of it.
-            # Generated files can conflict: keep this run's fresh copies (the odds and tracking logs merge by union, see .gitattributes).
+            # Generated files can conflict: keep this run's fresh copies (the forward logs merge by union, see .gitattributes).
             if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
               git checkout --theirs -- gridiron-t-rank.html data/preseason.json data/lines_hist.json
-              git add gridiron-t-rank.html data/preseason.json data/lines_hist.json kalshi_history.jsonl tracking.jsonl
+              git add gridiron-t-rank.html data/preseason.json data/lines_hist.json kalshi_history.jsonl tracking.jsonl kalshi_flags.jsonl
               GIT_EDITOR=true git rebase --continue
             fi
             git push

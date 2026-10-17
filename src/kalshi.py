@@ -32,6 +32,13 @@ def norm(s):
 PROBE_SERIES = ["KXNCAAFSPREAD", "KXNCAAFTOTAL"]
 
 
+def kickoff_passed(date, tm):
+    """Games rows carry an ET date and time ('7:30 PM', or '' when not set, counted as noon ET)."""
+    import pandas as pd
+    ko = pd.Timestamp(f"{date} {tm or '12:00 PM'}", tz="America/New_York")
+    return ko <= pd.Timestamp.now(tz="UTC")
+
+
 def fetch_markets(series="KXNCAAFGAME"):
     all_markets, cursor = [], None
     while True:
@@ -73,6 +80,7 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     site['games'] = [g[:11] for g in site['games']]  # idempotent: drop any kalshi fields from a prior run
     site['kbuy'] = {}
+    site['kquote'] = {}
     our_teams = sorted(set(v[0] for v in site['teams'].values()))
     norm_to_our = {norm(t): t for t in our_teams}
     our_to_id = {v[0]: int(k) for k, v in site['teams'].items()}
@@ -110,6 +118,7 @@ def main():
         teams = {}
         vols = {}
         quotes = {}
+        tickers = {}
         ok = True
         for m in ms:
             name = match_team(m["yes_sub_title"])
@@ -123,6 +132,7 @@ def main():
             teams[name] = round(pct, 1)
             vols[name] = vol
             quotes[name] = (bid, ask)
+            tickers[name] = m.get("ticker")
         if not ok or len(teams) != 2:
             continue
         ids = frozenset(our_to_id[n] for n in teams)
@@ -139,13 +149,22 @@ def main():
             opts = [q for q in (quotes[me][1], 1 - quotes[other][0] if quotes[other][0] > 0 else None) if q is not None and 0 < q < 1]
             return round(min(opts) * 100, 1) if opts else None
         site.setdefault('kbuy', {})[str(g[0])] = [buy(home_name, away_name), buy(away_name, home_name), vols[home_name], vols[away_name]]
+        # raw quotes as Kalshi showed them, for kalshi_flags.py to freeze with each opportunity
+        site.setdefault('kquote', {})[str(g[0])] = {side: {"bid": quotes[n][0], "ask": quotes[n][1], "ticker": tickers[n], "vol24h": vols[n]}
+                                                  for side, n in (("home", home_name), ("away", away_name))}
         # log a snapshot now, so line movement over time becomes buildable going forward,
-        # even without historical opening lines
+        # even without historical opening lines. Pregame only: a game that kicked off but isn't final
+        # still counts as upcoming, and in game prices would spoil the price history and the track record.
+        if kickoff_passed(g[1], g[2]):
+            continue
         snapshot_lines.append(json.dumps({
             "ts": now, "gid": g[0], "date": g[1], "home_id": g[3], "away_id": g[4],
             "home_pct": teams[home_name], "away_pct": teams[away_name],
             "home_vol24h": vols[home_name], "away_vol24h": vols[away_name],
             "model_pred": g[8], "vegas_line": g[9],
+            # for the Kalshi track record: what you could buy each side for, and the books' moneylines, at this moment
+            "home_buy": site['kbuy'][str(g[0])][0], "away_buy": site['kbuy'][str(g[0])][1],
+            "home_ml": (site.get('ml') or {}).get(str(g[0]), [None, None])[0], "away_ml": (site.get('ml') or {}).get(str(g[0]), [None, None])[1],
         }))
 
     if snapshot_lines:
@@ -167,6 +186,27 @@ def main():
     except FileNotFoundError:
         pass
     site['kmove'] = {str(k): v[-40:] for k, v in moves.items()}
+
+    # every snapshot with buy prices (logged since the Kalshi track record started), for every game, compact:
+    # {gid: [[ts, home buy, away buy, home ml, away ml, spread, home mid], ...]}, repeated identical snapshots dropped.
+    # The page finds the first snapshot where Kalshi was cheaper than the books' fair price and grades it.
+    snaps = defaultdict(list)
+    try:
+        with open(HISTORY_PATH) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if "home_buy" not in r:
+                    continue
+                row = [r["ts"][:16], r["home_buy"], r["away_buy"], r.get("home_ml"), r.get("away_ml"), r.get("vegas_line"), r.get("home_pct")]
+                prev = snaps[r["gid"]]
+                if not prev or prev[-1][1:] != row[1:]:
+                    prev.append(row)
+    except FileNotFoundError:
+        pass
+    site['ksnap'] = {str(k): v for k, v in snaps.items()}
 
     # pad every other game row to the same length (14: original 11 + 2 kalshi fields)
     for g in site['games']:
