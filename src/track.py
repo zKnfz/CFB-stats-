@@ -17,7 +17,9 @@ sys.path.insert(0, '.')
 from paths import DATA_DIR
 import pandas as pd
 
-LOG = os.environ.get('TRACK_LOG') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tracking.jsonl')  # override for local tests
+from forward_log import log_path, provenance, ROOT
+LOG = log_path('tracking.jsonl', 'TRACK_LOG')  # the real file only in CI; local runs write data/local_tracking.jsonl
+REAL = os.path.join(ROOT, 'tracking.jsonl')
 FIELDS = "gid date home away open model line logged lean rule".split()  # open may be null; line is what gets graded
 WINDOW_DAYS = 8
 RULE, MIN_EDGE = "spread-v1", 1.0  # a lean is the model's side when it disagrees with the logged line by 1+ points
@@ -33,11 +35,12 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     open(LOG, 'a').close()  # always exists, so the bot's git add never fails
     seen = {}
-    if os.path.exists(LOG):
-        for ln in open(LOG):
-            ln = ln.strip()
-            if ln:
-                e = json.loads(ln); seen.setdefault(e["gid"], e)  # union merges can repeat a line; first one wins
+    for path in dict.fromkeys([REAL, LOG]):  # read the real log (and a local one when not in CI), write only LOG
+        if os.path.exists(path):
+            for ln in open(path):
+                ln = ln.strip()
+                if ln:
+                    e = json.loads(ln); seen.setdefault(e["gid"], e)  # union merges can repeat a line; first one wins
     now = pd.Timestamp(datetime.now(timezone.utc))
     opens = site.get('lineopen', {})
     new = []
@@ -52,7 +55,7 @@ def main():
         edge = pred - spread  # frozen with the entry, so changing the rule later can't rewrite which side was taken
         e = {"gid": gid, "date": date, "home": h, "away": a, "open": op, "model": pred, "line": spread,
              "logged": now.strftime('%Y-%m-%dT%H:%MZ'), "rule": RULE, "min_edge": MIN_EDGE, "edge": round(edge, 2),
-             "lean": ("home" if edge > 0 else "away") if abs(edge) >= MIN_EDGE else None}
+             "lean": ("home" if edge > 0 else "away") if abs(edge) >= MIN_EDGE else None, **provenance()}
         new.append(e); seen[gid] = e
     if new:
         with open(LOG, 'a') as f:

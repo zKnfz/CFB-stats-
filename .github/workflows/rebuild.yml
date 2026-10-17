@@ -57,20 +57,9 @@ jobs:
           python3 build_page.py
 
       - name: Forward logs are append only
-        # tracking.jsonl, kalshi_history.jsonl and kalshi_flags.jsonl are forward tests: a rebuild may add lines,
-        # never change or drop one. Each committed file must still be an exact prefix of the new one.
-        run: |
-          for f in tracking.jsonl kalshi_history.jsonl kalshi_flags.jsonl; do
-            if git cat-file -e HEAD:"$f" 2>/dev/null; then
-              git show HEAD:"$f" > /tmp/old_log
-              n=$(stat -c%s /tmp/old_log)
-              if ! head -c "$n" "$f" | cmp -s - /tmp/old_log; then
-                echo "::error::$f: a committed line was changed or removed; forward logs are append only"
-                exit 1
-              fi
-            fi
-          done
-          echo "forward logs: only appended"
+        # tracking.jsonl, kalshi_history.jsonl and kalshi_flags.jsonl are forward tests: a rebuild may only add lines,
+        # never change or drop one, and every new line must come from this run (see src/check_logs.py).
+        run: python3 src/check_logs.py
 
       - name: Commit updated page and odds history if changed
         run: |

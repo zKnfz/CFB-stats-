@@ -13,7 +13,9 @@ from collections import defaultdict
 import urllib.request
 from paths import DATA_DIR
 
-HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'kalshi_history.jsonl')
+from forward_log import log_path, provenance, ROOT
+HISTORY_PATH = log_path('kalshi_history.jsonl', 'KHIST_LOG')  # the real file only in CI; local runs write data/local_kalshi_history.jsonl
+HISTORY_REAL = os.path.join(ROOT, 'kalshi_history.jsonl')
 
 ALIASES = {
     "appalachian state": "app state", "southern mississippi": "southern miss",
@@ -159,47 +161,43 @@ def main():
             # for the Kalshi track record: what you could buy each side for, and the books' moneylines, at this moment
             "home_buy": site['kbuy'][str(g[0])][0], "away_buy": site['kbuy'][str(g[0])][1],
             "home_ml": (site.get('ml') or {}).get(str(g[0]), [None, None])[0], "away_ml": (site.get('ml') or {}).get(str(g[0]), [None, None])[1],
+            "home_bid": quotes[home_name][0], "home_ask": quotes[home_name][1], "away_bid": quotes[away_name][0], "away_ask": quotes[away_name][1],
+            **provenance(),
         }))
 
     if snapshot_lines:
         with open(HISTORY_PATH, 'a') as f:
             f.write('\n'.join(snapshot_lines) + '\n')
 
+    # every snapshot ever logged: the real log, plus the local one when this isn't the CI run
+    history = []
+    for path in dict.fromkeys([HISTORY_REAL, HISTORY_PATH]):
+        if os.path.exists(path):
+            for line in open(path):
+                try:
+                    history.append(json.loads(line))
+                except ValueError:
+                    continue
+
     # price history for games still upcoming, for the Trends tab's line movement sparkline
     up_ids = {g[0] for g in site['games'] if g[6] is None}
     moves = defaultdict(list)
-    try:
-        with open(HISTORY_PATH) as f:
-            for line in f:
-                try:
-                    r = json.loads(line)
-                except ValueError:
-                    continue
-                if r.get("gid") in up_ids and r.get("home_pct") is not None:
-                    moves[r["gid"]].append([r["ts"], r["home_pct"]])
-    except FileNotFoundError:
-        pass
+    for r in history:
+        if r.get("gid") in up_ids and r.get("home_pct") is not None:
+            moves[r["gid"]].append([r["ts"], r["home_pct"]])
     site['kmove'] = {str(k): v[-40:] for k, v in moves.items()}
 
     # every snapshot with buy prices (logged since the Kalshi track record started), for every game, compact:
     # {gid: [[ts, home buy, away buy, home ml, away ml, spread, home mid], ...]}, repeated identical snapshots dropped.
-    # The page finds the first snapshot where Kalshi was cheaper than the books' fair price and grades it.
+    # The track record uses the last pregame buy price of a flagged side from these, for closing line value.
     snaps = defaultdict(list)
-    try:
-        with open(HISTORY_PATH) as f:
-            for line in f:
-                try:
-                    r = json.loads(line)
-                except ValueError:
-                    continue
-                if "home_buy" not in r:
-                    continue
-                row = [r["ts"][:16], r["home_buy"], r["away_buy"], r.get("home_ml"), r.get("away_ml"), r.get("vegas_line"), r.get("home_pct")]
-                prev = snaps[r["gid"]]
-                if not prev or prev[-1][1:] != row[1:]:
-                    prev.append(row)
-    except FileNotFoundError:
-        pass
+    for r in history:
+        if "home_buy" not in r:
+            continue
+        row = [r["ts"][:16], r["home_buy"], r["away_buy"], r.get("home_ml"), r.get("away_ml"), r.get("vegas_line"), r.get("home_pct")]
+        prev = snaps[r["gid"]]
+        if not prev or prev[-1][1:] != row[1:]:
+            prev.append(row)
     site['ksnap'] = {str(k): v for k, v in snaps.items()}
 
     # pad every other game row to the same length (14: original 11 + 2 kalshi fields)

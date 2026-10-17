@@ -19,7 +19,15 @@ from datetime import datetime, timezone
 import pandas as pd
 from paths import DATA_DIR
 
-LOG = os.environ.get('KFLAG_LOG') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'kalshi_flags.jsonl')  # override for local tests
+from forward_log import log_path, provenance, ROOT
+LOG = log_path('kalshi_flags.jsonl', 'KFLAG_LOG')  # the real file only in CI; local runs write data/local_kalshi_flags.jsonl
+REAL = os.path.join(ROOT, 'kalshi_flags.jsonl')
+FORMULA = {"fee": "0.07 * price * (1 - price) per contract (Kalshi taker fee)",
+           "fair_ml": "power de-vig: find k with pH^k + pA^k = 1 over the implied chances of the two book moneylines",
+           "fair_spread": "1 / (1 + exp(-home margin / K)), K fit by grid on decided games 2008 on",
+           "buy": "min(YES ask on this team, 1 - YES bid on the other team)",
+           "ev": "fair / (buy + fee) - 1", "kelly_q": "max(0, (fair - cost) / (1 - cost)) / 4",
+           "model_p": "normal cdf of model margin / sd (sd_early when a team has no games yet)"}
 RULE = "kalshi-ml-v1"
 THRESH = {"min_c": 5, "max_c": 95, "max_off_c": 12, "min_ev": 0.0}
 
@@ -66,10 +74,15 @@ def main():
     site = json.load(open(DATA_DIR + '/site_data.json'))
     open(LOG, 'a').close()
     seen, lines = set(), []
-    for ln in open(LOG):
-        ln = ln.strip()
-        if ln:
-            e = json.loads(ln); lines.append(e); seen.add((e["gid"], e["side"]))
+    for path in dict.fromkeys([REAL, LOG]):  # read the real log (and a local one when not in CI), write only LOG
+        if not os.path.exists(path):
+            continue
+        for ln in open(path):
+            ln = ln.strip()
+            if ln:
+                e = json.loads(ln)
+                if (e["gid"], e["side"]) not in seen:
+                    lines.append(e); seen.add((e["gid"], e["side"]))
     Q, ML = site.get('kquote', {}), site.get('ml', {})
     now = pd.Timestamp(datetime.now(timezone.utc))
     wink = None
@@ -106,13 +119,17 @@ def main():
             edge = (p - c) * 100
             if not (ev > THRESH["min_ev"] and THRESH["min_c"] <= c * 100 <= THRESH["max_c"] and abs(edge) <= THRESH["max_off_c"]):
                 continue
-            e = {"v": 1, "rule": RULE, "ts": now.strftime('%Y-%m-%dT%H:%M:%SZ'), "gid": gid, "date": g[1], "time": g[2],
+            sd = site['params']['sd_early'] if g[10] == 0 else site['params']['sd']
+            mp = None if g[8] is None else 0.5 * (1 + math.erf(g[8] / sd / math.sqrt(2)))
+            e = {"v": 2, "rule": RULE, "ts": now.strftime('%Y-%m-%dT%H:%M:%SZ'), "gid": gid, "date": g[1], "time": g[2],
                  "kickoff_utc": kickoff(g[1], g[2]).strftime('%Y-%m-%dT%H:%MZ'), "home": g[3], "away": g[4],
                  "side": side, "team": team, "opp": opp, "buy": c, "buy_via": via, "quotes": q,
-                 "fair_method": method, "fair_param": param, "books_ml": ml if method == "books_ml_power" else None, "spread": g[9],
+                 "fair_method": method, "fair_param": param, "books_ml": ml if ml and ml[0] is not None and ml[1] is not None else None, "spread": g[9],
+                 "open_spread": site.get('lineopen', {}).get(str(gid)),
                  "fair": round(p, 5), "fee": round(fee, 5), "cost": round(cost, 5), "ev": round(ev, 5), "edge_c": round(edge, 2),
                  "kelly_q": round(max(0.0, (p - cost) / (1 - cost)) / 4, 5), "thresholds": THRESH,
-                 "model_pred": g[8], "model_note": "context only, not used to qualify"}
+                 "model_pred": g[8], "model_p_side": None if mp is None else round(mp if side == "home" else 1 - mp, 5),
+                 "model_note": "context only, not used to qualify", "formula": FORMULA, **provenance()}
             new.append(e); seen.add((gid, side))
     if new:
         with open(LOG, 'a') as f:  # append only: existing lines are never rewritten
