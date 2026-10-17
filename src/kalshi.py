@@ -4,8 +4,8 @@ kalshi_away_pct (both null if unmatched or the fetch failed; a midpoint style pr
 Also 'kbuy': {gid: [home buy, away buy, home 24h volume, away 24h volume]}: the cheapest price to
 actually get each team, in cents. Buying a team is either YES on its market at the ask or NO on the
 other team's market at 100 minus that market's bid, whichever is cheaper. EV on the page uses these.
-Also logs what Kalshi's college spread and total series look like (PROBE_SERIES), so they can be
-added once their format is known. No API key needed for market data. Run after export3.py.
+Also logs which college football series Kalshi lists (probe), so spread and total markets can be
+added once their tickers and format are known. No API key needed for market data. Run after export3.py.
 """
 import sys, json, unicodedata, os, datetime, time
 sys.path.insert(0, '.')
@@ -29,7 +29,6 @@ def norm(s):
         s = s[:-3] + " state"
     return s
 
-PROBE_SERIES = ["KXNCAAFSPREAD", "KXNCAAFTOTAL"]
 
 
 def kickoff_passed(date, tm):
@@ -55,24 +54,19 @@ def fetch_markets(series="KXNCAAFGAME"):
     return [m for m in all_markets if m["status"] == "active"]
 
 def probe():
-    """What do Kalshi's college spread and total markets look like? Logs a few, changes nothing."""
-    for series in PROBE_SERIES:  # what do Kalshi's college spread and total markets look like? (log only)
-        ms = None
-        for wait in (0, 15):  # Kalshi rate limits bursts (HTTP 429); this runs first, before the winner markets
-            time.sleep(wait)
-            try:
-                ms = fetch_markets(series); break
-            except Exception as e:
-                print(f"probe {series} failed:", e)
-        try:
-            if ms is None:
-                continue
-            print(f"probe {series}: {len(ms)} active markets")
-            for m in ms[:3]:
-                print("  ", {k: m.get(k) for k in ("ticker", "event_ticker", "title", "subtitle", "yes_sub_title", "no_sub_title",
-                                                  "floor_strike", "cap_strike", "strike_type", "yes_bid_dollars", "yes_ask_dollars", "volume_24h_fp")})
-        except Exception as e:
-            print(f"probe {series} print failed:", e)
+    """Which college football series does Kalshi list? One request to the series list, logs the matches, changes nothing.
+    (Guessing KXNCAAFSPREAD / KXNCAAFTOTAL got HTTP 429 every time while the winner series worked, so ask instead.)"""
+    try:
+        req = urllib.request.Request("https://api.elections.kalshi.com/trade-api/v2/series?category=Sports",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            series = json.loads(r.read()).get("series") or []
+        hits = [x for x in series if "NCAAF" in (x.get("ticker") or "").upper() or "college football" in (x.get("title") or "").lower()]
+        print(f"probe: {len(series)} sports series, {len(hits)} college football:")
+        for x in hits[:40]:
+            print("  ", x.get("ticker"), "|", x.get("title"), "|", x.get("frequency"))
+    except Exception as e:
+        print("probe failed:", e)
 
 
 def main():
