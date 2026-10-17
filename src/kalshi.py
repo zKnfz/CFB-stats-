@@ -65,7 +65,10 @@ def probe():
             series = json.loads(r.read()).get("series") or []
         hits = [x for x in series if "NCAAF" in (x.get("ticker") or "").upper() or "college football" in (x.get("title") or "").lower()]
         print(f"probe: {len(series)} sports series, {len(hits)} college football:")
-        for x in hits[:40]:
+        # per game markets first (spread, total, winner), since those are the ones the site could use
+        game = [x for x in hits if any(w in ((x.get("ticker") or "") + " " + (x.get("title") or "")).lower()
+                                       for w in ("spread", "total", "game", "winner", "margin"))]
+        for x in game + [x for x in hits if x not in game][:20]:
             print("  ", x.get("ticker"), "|", x.get("title"), "|", x.get("frequency"))
     except Exception as e:
         print("probe failed:", e)
