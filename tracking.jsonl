@@ -68,3 +68,4 @@
 {"gid":401871092,"date":"2026-10-20","home":276,"away":6,"open":-3.0,"model":-0.65,"line":-3.0,"logged":"2026-10-16T20:41Z"}
 {"gid":401871070,"date":"2026-10-21","home":2534,"away":166,"open":-2.5,"model":0.39,"line":-2.5,"logged":"2026-10-16T20:41Z"}
 {"gid":401871056,"date":"2026-10-22","home":338,"away":2335,"open":-8.5,"model":-13.71,"line":-8.5,"logged":"2026-10-16T20:41Z"}
+{"gid":401864527,"date":"2026-10-24","home":167,"away":2449,"open":3.5,"model":17.2,"line":4.5,"logged":"2026-10-17T03:16Z","rule":"spread-v1","min_edge":1.0,"edge":12.7,"lean":"home","run_id":"38998091910","code_sha":"d105ba4572d4ccd15905593f06c62936b4cb7444"}
