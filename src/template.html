@@ -61,6 +61,10 @@ nav.tabs button{flex:0 0 auto;white-space:nowrap}
 .icard .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:0 0 auto}
 .icard .it{padding:8px 12px 10px;font-size:16px;font-weight:600;line-height:1.35}
 .icard .ib{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line);font-family:var(--data);font-size:14px}
+.ins .insr{display:flex;align-items:center;gap:10px;padding:6px 12px 0}.ins .insr b{font:800 30px var(--display);line-height:1}.ins .insr b.up{color:var(--good)}.ins .insr b.dn{color:var(--bad)}.ins .insr span{font-size:13px;font-weight:600;line-height:1.2}
+.ins .it{padding-top:4px}.ins .insc{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;font-size:12px}.ins .insc span{border:1px solid var(--line);border-radius:6px;padding:2px 6px}.ins .insc b{margin-left:4px}
+.ins .ib{flex-wrap:wrap;font-family:inherit;font-size:12px}.ins details.insg{padding:0 12px 10px}.ins details.insg summary{cursor:pointer;font-size:13px;color:var(--accent)}.ins td.rw{color:var(--good)}.ins td.rl{color:var(--bad)}
+#gvIns .seg{margin-bottom:2px}#gvIns details.insbt{margin-top:8px}#gvIns details.insbt summary{cursor:pointer}
 .icard .ib .px{font-weight:700;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
 .icard .strip{margin:0;gap:2px}.icard .strip i{height:4px;border-radius:0}
 .icard .rates{display:flex;gap:6px;padding:0 12px 8px;flex-wrap:wrap;font-family:var(--data);font-size:12px}
@@ -2105,6 +2109,138 @@ function gvOxRes(v){  // the part of the block that changes while a custom line 
       : `Dashed line is ${custom?'your number':"tonight's number"}${mk.kind==='ats'?` (${esc(ab(team))} ${line<0?`needs to win by more than ${(-line).toFixed(1)}`:line>0?`covers by winning or losing by less than ${line.toFixed(1)}`:'needs to win'})`:''}. Every past final score is graded against it, not against that game's own line.`}
       ${mk.kind==='ml'?'':`Green ${mk.kind==='ou'?'cleared':'covered'}, red didn't, gray pushed.`} Records are wins-losses-pushes; percentages leave pushes out.${nf?' Filters apply first, then the range: L5 is the last 5 games that pass them.':''}${(()=>{ const os = osResolve(GV.f); return os ? ` <b>${esc(os.tierLbl)} ${esc(os.name)}</b> is point-in-time: each opponent's rank among FBS teams on the day of that game (${os.basis==='adj'?'opponent adjusted, from its pregame snapshot':'raw season to date, FBS games only'}), and games only count once an opponent has ${OS_MIN}+ FBS games and ${OS_POOL}+ teams are ranked (so most September games drop out). On desktop, hover a bar for that opponent's rank.` : ''; })()}</p>`;
 }
+// ---------- Matchup Insights (game page) ----------
+// Plain statements like "Duke is 5-2-1 ATS in its last 8 road games", picked by a fixed procedure:
+// 1. only situations each team is in for THIS game (site, favorite or underdog, the two together, conference game,
+//    last result, rest, and the opponent's point-in-time strength today), from a short catalog;
+// 2. each situation has a window fixed in advance (INS_WIN), so the generator never tries L5, L6, L7... and keeps
+//    the best looking one; the window is always full or the situation is skipped;
+// 3. headlines are Actual ATS (each game against its own closing line), pushes stay in the window;
+// 4. gates and a frozen score, then redundancy rules. These numbers are frozen: never tune them on the backtest.
+const INS = {
+  back: 3,        // a window may reach back 3 seasons before this one
+  minDec: 0.8,    // at least 80% of the window decided (not pushes)
+  dev: 0.20,      // record at least 20 points from 50%
+  lift: 0.15,     // and (except Overall) at least 15 points from the team's ATS in every game over the same span
+  prior: 5,       // shrunk rate (w+5)/(decided+10) so small samples rank lower
+  liftW: 0.5,     // score = |shrunk - 50%| + 0.5 x |shrunk - shrunk baseline|
+  jac: 0.7,       // two insights sharing 70%+ of their games: keep the higher score
+  perTeam: 4,     // and one per situation family
+  from: 2008 };   // backtest seasons
+// Windows by situation, set from how often it comes up (about 12 lined games a season), not from any results.
+const INS_WIN = {overall:10, home:8, road:8, fav:8, dog:8, combo:6, conf:8, nonconf:5, offW:8, offL:8, bye:5, short:5, os:5};
+const INS_OS = [['pts','d'],['epa','d'],['pts','o'],['epa','o']];  // opponent's scoring and EPA defense, scoring and EPA offense
+const ordinal = n => n + ([,"st","nd","rd"][(n%100>>3^1)&&n%10] || "th");
+function insBefore(rows, date){ let lo=0, hi=rows.length; while (lo<hi){ const m=(lo+hi)>>1; rows[m].date<date ? lo=m+1 : hi=m; } return lo; }
+function insCtx(g, team){  // the situation `team` is in for game g, from information available before kickoff
+  const [gid,date,,h,a,neu,,,,veg] = g, opp = team===h ? a : h, home = team===h, y = +seasonOf(date);
+  const cf = (DATA.seasons[y]||{}).conf||{}, rows = tfTeam(team), n = insBefore(rows, date), last = n ? rows[n-1] : null;
+  const days = last ? Math.round((new Date(date)-new Date(last.date))/864e5) : null, recent = last && days<60;
+  const os = INS_OS.map(([met, side])=>{ const r = osRanks(met, side, 'adj').get(gid+':'+opp) || null;
+    return {met, side, r, tier: !r ? null : r.rk<=25 ? '25' : r.rkB<=25 ? 'b25' : null}; });
+  return {g, gid, date, y, team, opp, home, neu, n, spread: veg==null ? null : (home ? -veg : veg),
+    confGame: !!cf[team] && cf[team]===cf[opp] && !/independent/i.test(cf[team]),
+    prev: recent ? (last.us>last.them ? 'W' : 'L') : null, rest: recent ? days : null, os}; }
+function insSituations(c){  // the catalog, limited to what applies tonight
+  const out = [], add = (key, fam, f, win, phrase, os) => out.push({key, fam, f, win, phrase, os});
+  const site = c.home ? 'home' : 'away', role = c.spread==null || c.spread===0 ? null : c.spread<0 ? 'fav' : 'dog';
+  add('overall', 'overall', {}, INS_WIN.overall, 'games');
+  if (!c.neu) add(c.home?'home':'road', 'site', {site}, INS_WIN[c.home?'home':'road'], c.home ? 'home games' : 'road games');
+  if (role) add(role, 'role', {role}, INS_WIN[role], role==='fav' ? 'games as a favorite' : 'games as an underdog');
+  if (role && !c.neu) add((c.home?'home':'road')+role, 'combo', {site, role}, INS_WIN.combo, `games as a ${c.home?'home':'road'} ${role==='fav'?'favorite':'underdog'}`);
+  add(c.confGame?'conf':'nonconf', 'conf', {conf: c.confGame?'y':'n'}, INS_WIN[c.confGame?'conf':'nonconf'], c.confGame ? 'conference games' : 'non-conference games');
+  if (c.prev) add('off'+c.prev, 'prev', {prev: c.prev}, INS_WIN['off'+c.prev], c.prev==='W' ? 'games after a win' : 'games after a loss');
+  if (c.rest!=null && (c.rest>=13 || c.rest<=6)){ const k = c.rest>=13 ? 'bye' : 'short'; add(k, 'rest', {rest: k}, INS_WIN[k], k==='bye' ? 'games after a bye week' : 'games on a short week'); }
+  for (const o of c.os) if (o.tier){ const m = OSM[o.met], what = o.side==='o' ? m[3] : m[2];
+    add(`os-${o.met}-${o.side}-${o.tier}`, 'os', {osMet:o.met, osSide:o.side, osTier:o.tier, osBasis:'adj'}, INS_WIN.os,
+      `games vs teams that were ${o.tier==='25'?'top':'bottom'} 25 ${what}s at the time`, {...o, what}); }
+  return out; }
+function insEval(c, s){  // one situation: the last s.win lined games that match, eligibility first, then the window
+  const rows = tfTeam(c.team), minY = c.y - INS.back, items = [];
+  for (let j=c.n-1; j>=0 && items.length<s.win; j--){ const x = rows[j]; if (x.y<minY) break; if (x.spread!=null && sideMatch(x, s.f)) items.push(x); }
+  if (items.length<s.win) return null;   // never shrink the window to fit
+  items.reverse();
+  let w=0, l=0, p=0; for (const x of items) x.cover>0 ? w++ : x.cover<0 ? l++ : p++;
+  const d = w+l; if (d < Math.ceil(INS.minDec*s.win)) return null;
+  const r = w/d; if (Math.abs(r-0.5) < INS.dev) return null;
+  let bw=0, bl=0, bp=0; const from = items[0].date;   // baseline: every lined game this team played over the same span
+  for (let j=c.n-1; j>=0 && rows[j].date>=from; j--){ const x = rows[j]; if (x.spread==null) continue; x.cover>0 ? bw++ : x.cover<0 ? bl++ : bp++; }
+  const br = bw+bl ? bw/(bw+bl) : 0.5;
+  if (s.fam!=='overall' && Math.abs(r-br) < INS.lift) return null;
+  const sh = (w+INS.prior)/(d+2*INS.prior), bsh = (bw+INS.prior)/(bw+bl+2*INS.prior);
+  return {...s, team: c.team, opp: c.opp, spread: c.spread, y: c.y, items, w, l, p, d, r, base: {w:bw, l:bl, p:bp}, pos: r>0.5,
+    score: Math.abs(sh-0.5) + INS.liftW*Math.abs(sh-bsh)}; }
+function insFeed(g){  // both teams' insights in one list, best first
+  const all = [];
+  for (const team of [g[3], g[4]]){ const c = insCtx(g, team), keep = [], fams = new Set();
+    const cands = insSituations(c).map(s=>insEval(c, s)).filter(Boolean).sort((a,b)=>b.score-a.score);
+    for (const x of cands){ if (keep.length>=INS.perTeam) break; if (fams.has(x.fam)) continue;
+      const ids = new Set(x.items.map(i=>i.gid));
+      if (keep.some(k=>{ const both = k.items.filter(i=>ids.has(i.gid)).length; return both/(ids.size+k.items.length-both) >= INS.jac; })) continue;
+      keep.push(x); fams.add(x.fam); }
+    all.push(...keep); }
+  return all.sort((a,b)=>b.score-a.score); }
+// Point in time backtest of the exact procedure above: for every lined game since INS.from, build the feed from what
+// was known before kickoff and grade the side each insight points to against that game's closing line.
+function insChance(w, d){ if (!d) return 1; const k = Math.max(w, d-w); let t = 0, c = 1;   // two sided coin flip chance of a record at least this lopsided
+  for (let i=0;i<=d;i++){ if (i>0) c = c*(d-i+1)/i; if (i>=k) t += c; } return Math.min(1, 2*t/2**d); }
+function insGrade(x, g){ const side = x.pos ? x.team : x.opp, m = side===g[3] ? g[6]-g[7] : g[7]-g[6]; return Math.sign(m + (side===g[3] ? -g[9] : g[9])); }
+function insBacktest(onDone, onStep){
+  const gs = DATA.games.filter(g=>g[6]!==null && g[9]!=null && +seasonOf(g[1])>=INS.from).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:a[0]-b[0]);
+  const z = () => ({w:0,l:0,p:0}), res = {games: gs.length, withIns: 0, top: z(), top20: z(), all: z(), fam: {}, n: 0, from: gs.length ? gs[0][1] : null, to: gs.length ? gs[gs.length-1][1] : null};
+  const tally = (o, r) => { r>0 ? o.w++ : r<0 ? o.l++ : o.p++; };
+  let i = 0; const step = () => { const t0 = performance.now();
+    while (i<gs.length && performance.now()-t0<40){ const g = gs[i++], feed = insFeed(g); if (!feed.length) continue; res.withIns++;
+      const r0 = insGrade(feed[0], g); tally(res.top, r0); if (+seasonOf(g[1])>=2020) tally(res.top20, r0);
+      for (const x of feed){ const r = insGrade(x, g); tally(res.all, r); tally(res.fam[x.fam] || (res.fam[x.fam] = z()), r); res.n++; } }
+    if (i<gs.length){ if (onStep) onStep(i/gs.length); setTimeout(step, 0); } else onDone(res); };
+  step(); }
+let INSV = {team: 'both', all: false, bt: null, running: false};
+const INS_FAM = {overall:'Overall', site:'Home or road', role:'Favorite or underdog', combo:'Site and role', conf:'Conference', prev:'Last result', rest:'Rest', os:'Opponent strength'};
+function insCard(x, v, i){
+  const side = x.pos ? x.team : x.opp, sp = x.spread==null ? null : (x.pos ? x.spread : -x.spread), color = (DATA.teams[x.team]||[])[3] || 'var(--muted)';
+  const [lo, hi] = wilsonCI(x.w, x.d), ch = insChance(x.w, x.d), rows = tfTeam(x.team), n = insBefore(rows, v.date);
+  const l5 = x.win>5 ? wlp(x.items.slice(-5).map(q=>({hit:q.cover}))) : null;
+  const sea = wlp(rows.slice(0, n).filter(q=>q.y===x.y && q.spread!=null && sideMatch(q, x.f)).map(q=>({hit:q.cover})));
+  const today = x.os && x.os.r ? ` ${nm(x.opp)} is #${x.os.r.rk} of ${x.os.r.n} in ${x.os.what} going into this game${x.os.tier==='b25' ? `, ${x.os.r.rkB===1 ? 'the worst' : ordinal(x.os.r.rkB)+' worst'}` : ''}.` : '';
+  const rec = `${x.w}-${x.l}-${x.p}`, os = x.f.osTier ? osResolve(x.f) : null;
+  return `<div class="icard ins">
+    <div class="ih"><b><span class="dot" style="background:${color}"></span>${teamLinkHtml(x.team)}</b><span class="src h">${esc(INS_FAM[x.fam])}</span></div>
+    <div class="insr"><b class="${x.pos?'up':'dn'}">${rec}</b><span>${Math.round(100*x.r)}% ATS<br><span class="note">of decided games</span></span></div>
+    <div class="it">${esc(nm(x.team))} is ${rec} ATS in its last ${x.win} ${esc(x.phrase)}.${today?`<span class="note" style="font-weight:400">${esc(today)}</span>`:''}</div>
+    <div class="strip" style="margin:0 12px 6px" title="Oldest to newest. Green covered that game's closing line, red didn't, gray pushed.">${x.items.map(q=>`<i class="${q.cover>0?'w':q.cover<0?'l':''}" title="${fmtDate(q.date)} ${q.home||q.neu?'vs':'at'} ${esc(nm(q.opp))} ${q.us}-${q.them}"></i>`).join('')}</div>
+    <div class="rates insc">${l5?`<span>L5<b>${wlpTxt(l5)}</b></span>`:''}<span>${x.y} so far<b>${wlpTxt(sea)}</b></span><span>All games, same span<b>${wlpTxt(x.base)}</b></span></div>
+    <div class="ib"><span class="note">Points to ${esc(ab(side))}${sp!=null?' '+spreadTxt(sp):''}</span><span class="note">95% range ${Math.round(lo*100)} to ${Math.round(hi*100)}% · coin flip odds of a record this lopsided ${Math.round(ch*100)}%</span></div>
+    <details class="insg"><summary>Show the ${x.items.length} games</summary>
+      <div class="tablebox"><table class="tlog"><thead><tr><th class="l">Date</th><th class="l">Opponent</th>${os?`<th>${esc(x.os.what)} rank then</th>`:''}<th>Score</th><th>Line</th><th>ATS margin</th><th>Result</th></tr></thead><tbody>
+      ${x.items.map(q=>{ const r = os ? osOppRank(q, os) : null, am = q.us-q.them+q.spread;
+        return `<tr><td class="l">${fmtDate(q.date)}</td><td class="l">${q.home||q.neu?'vs':'at'} ${teamLinkHtml(q.opp)}${q.neu?' <span class="note">(n)</span>':''}</td>${os?`<td>${r?'#'+r.rk+' of '+r.n:'N/A'}</td>`:''}<td>${q.us}-${q.them}</td><td>${spreadTxt(q.spread)}</td><td>${f1(am)}</td><td class="${q.cover>0?'rw':q.cover<0?'rl':''}">${q.cover>0?'Covered':q.cover<0?'Missed':'Push'}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${v.spread!=null?`<button type="button" class="chip" data-inshr="${i}">Open in the hit rate block</button>`:''}</details>
+  </div>`; }
+function gvInsights(v){
+  const g = DATA.games.find(x=>x[0]===GV.gid), feed = insFeed(g); INSV.feed = feed;
+  const shown = feed.map((x,i)=>[x,i]).filter(([x])=>INSV.team==='both' || x.team===+INSV.team), top = INSV.all ? shown : shown.slice(0, 3);
+  const cnt = id => feed.filter(x=>x.team===id).length;
+  const chips = `<div class="seg" role="group" aria-label="Team">${[['both',`Both (${feed.length})`],[String(v.a),`${ab(v.a)} (${cnt(v.a)})`],[String(v.h),`${ab(v.h)} (${cnt(v.h)})`]].map(([k,l])=>`<button data-insv="${k}" aria-pressed="${INSV.team===k}">${esc(l)}</button>`).join('')}</div>`;
+  const bt = INSV.bt, pc = o => o.w+o.l ? (100*o.w/(o.w+o.l)).toFixed(1)+'%' : 'N/A', ci = o => { const [a,b] = wilsonCI(o.w, o.w+o.l); return `${(a*100).toFixed(1)} to ${(b*100).toFixed(1)}%`; };
+  const btHtml = INSV.running ? `<p class="note" id="insBtP">Running every lined game since ${INS.from}…</p>` : !bt ? `<button type="button" class="chip" data-insbt="1">Run the backtest</button> <span class="note">Takes a few seconds, once.</span>` :
+    `<p class="note">For every lined game from ${fmtDate(bt.from)} to ${fmtDate(bt.to)} (${bt.games.toLocaleString()}), the feed was rebuilt from only what was known before kickoff, with these exact rules, and each insight's side was graded against that game's closing line. ${bt.withIns.toLocaleString()} games had at least one insight. Breaking even at −110 takes 52.4%.</p>
+    <div class="tablebox"><table class="tlog"><thead><tr><th class="l">What was graded</th><th>W-L-P</th><th>Covered</th><th>95% range</th></tr></thead><tbody>
+      <tr><td class="l"><b>Top insight in each game</b></td><td>${wlpTxt(bt.top)}</td><td><b>${pc(bt.top)}</b></td><td>${ci(bt.top)}</td></tr>
+      <tr><td class="l">Top insight, 2020 on</td><td>${wlpTxt(bt.top20)}</td><td>${pc(bt.top20)}</td><td>${ci(bt.top20)}</td></tr>
+      <tr><td class="l">Every insight shown (overlapping, so the range is too narrow)</td><td>${wlpTxt(bt.all)}</td><td>${pc(bt.all)}</td><td>${ci(bt.all)}</td></tr>
+      ${Object.keys(INS_FAM).filter(k=>bt.fam[k]).map(k=>`<tr><td class="l">${esc(INS_FAM[k])}</td><td>${wlpTxt(bt.fam[k])}</td><td>${pc(bt.fam[k])}</td><td>${ci(bt.fam[k])}</td></tr>`).join('')}
+    </tbody></table></div><p class="note">Reported as is. The rules were fixed before this ran and are not adjusted to improve it.</p>`;
+  return `<div id="gvIns"><h3 class="sec">Insights</h3>
+    ${feed.length ? chips : ''}
+    ${top.map(([x,i])=>insCard(x, v, i)).join('') || `<p class="note">${feed.length ? 'No insights for this team.' : `No situation clears the bar for this game: every record is within 20 points of 50%, too close to the team's overall form, or too small a sample. That is common.`}</p>`}
+    ${shown.length>3 ? `<button type="button" class="chip" data-insall="1" style="margin-top:8px">${INSV.all ? 'Show top 3' : `Show all ${shown.length}`}</button>` : ''}
+    <p class="note">Descriptive history${GV.gid && g[6]!==null ? ', as of before this game' : ''}: each card grades every game against its own closing line (Actual ATS), pushes stay in the record, and the window is fixed by situation before looking at results (overall 10, home or road 8, favorite or underdog 8, site and role 6, conference 8, non-conference 5, after a win or loss 8, after a bye or short week 5, opponent strength 5, all within the last ${INS.back} seasons plus this one). Opponent strength is each opponent's rank at the time (adjusted, ${OS_MIN}+ FBS games, ${OS_POOL}+ teams ranked). Lines already price most of this; a record like 4-1 shows up by chance often.</p>
+    <details class="insbt"${INSV.bt||INSV.running?' open':''}><summary class="note">Backtest: have insights like these called the next game?</summary><div id="insBt">${btHtml}</div></details></div>`; }
+function insRedraw(){ const v = gvCur(), el = $('gvIns'); if (v && el) el.outerHTML = gvInsights(v); }
+function insRunBt(){ if (INSV.running || INSV.bt) return; INSV.running = true; insRedraw();
+  insBacktest(res=>{ INSV.bt = res; INSV.running = false; insRedraw(); }, f=>{ const p = $('insBtP'); if (p) p.textContent = `Running every lined game since ${INS.from}… ${Math.round(f*100)}%`; }); }
 function gvOsCtl(){  // one opponent strength filter: side, metric, tier, basis
   const f = GV.f, met = OSM[f.osMet] ? f.osMet : 'pts', m = OSM[met], side = f.osSide==='o' ? 'o' : 'd', basis = !m[4] ? 'raw' : !m[5] ? 'adj' : f.osBasis==='raw' ? 'raw' : 'adj';
   const opt = (k, val, txt, cur) => `<option value="${val}"${cur===val?' selected':''}>${txt}</option>`;
@@ -2116,6 +2252,7 @@ function gvOsCtl(){  // one opponent strength filter: side, metric, tier, basis
 function gvOutlier(v){
   const {mks, mk, team, opp, actual, custom, line} = gvCtx(v);
   const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],['season',seasonOf(v.date)],['prev',SEASONS[SEASONS.indexOf(seasonOf(v.date))-1]||'Prev'],['h2h','H2H']];
+  if (/^L\d+$/.test(GV.rg) && !ranges.some(r=>r[0]===GV.rg)) ranges.splice(1, 0, [GV.rg, GV.rg]);  // a window opened from an insight
   // two ways to grade the same games, one tap apart, each with a one line answer to "what does this measure?"
   const ou = mk.kind==='ou', modes = mk.kind==='ml' ? '' : `<div class="oxmode">
       <div class="seg" role="group" aria-label="Grade past games against">
@@ -2252,7 +2389,7 @@ function renderGame(){
     <div class="betbar" style="margin-top:10px"><div><b>Signal agreement: <span class="cell ${sig.cls}">${sig.lbl}</span></b>${sig.side?` <span class="note">for the model's spread side, ${esc(ab(sig.side))}</span>`:''}</div></div>
     <ul class="anul">${sig.why.map(x=>`<li>${x}</li>`).join('')}</ul>
     <p class="note">Checks counted: the edge size's 2025+ record and line movement since open. Strong: a 3+ point disagreement with both supporting. Moderate: one supporting, none against. Conflicted: a check against. Weak: nothing supporting. Analogs are shown but not counted, because their cover rates have not predicted covers. This counts agreement between inputs; none of them has beaten closing lines out of sample, so it is not a probability or a pick.</p></div>`;
-  box.innerHTML = header + gvOutlier(v) + (DATA.plog && DATA.plog.length ? `<h3 class="sec">Player props</h3>${gvProps(v)}` : '') + `<h3 class="sec">Vs opponents like this</h3>${gvVsOpp(v)}` + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
+  box.innerHTML = header + gvInsights(v) + gvOutlier(v) + (DATA.plog && DATA.plog.length ? `<h3 class="sec">Player props</h3>${gvProps(v)}` : '') + `<h3 class="sec">Vs opponents like this</h3>${gvVsOpp(v)}` + read + `<h3 class="sec">Games like this</h3>${gvAnalogs(v)}<h3 class="sec">Teams like these</h3>${gvTeamsLike(v)}` + `<h3 class="sec">Team comparison</h3>${cmp}<h3 class="sec">Recent form</h3>${form}<h3 class="sec">Betting trends</h3>${trends}`;
 }
 $('gv').addEventListener('click', e=>{
   const ppt = e.target.closest('[data-ppt]'); if (ppt){ PP.team = +ppt.dataset.ppt; PP.pid = null; PP.line = null; renderGame(); return; }
@@ -2268,6 +2405,12 @@ $('gv').addEventListener('click', e=>{
   if (e.target.closest('[data-anmore]')){ AN.more = !AN.more; renderGame(); return; }
   const ad = e.target.closest('[data-and]'); if (ad){ const k = ad.dataset.and; AN.off = ad.checked ? AN.off.filter(x=>x!==k) : [...AN.off, k]; renderGame();
     const d = $('gv').querySelector('.anadv'); if (d) d.open = true; return; }
+  const iv = e.target.closest('[data-insv]'); if (iv){ INSV.team = iv.dataset.insv; INSV.all = false; insRedraw(); return; }
+  if (e.target.closest('[data-insall]')){ INSV.all = !INSV.all; insRedraw(); return; }
+  if (e.target.closest('[data-insbt]')){ insRunBt(); return; }
+  const ih = e.target.closest('[data-inshr]'); if (ih){ const x = (INSV.feed||[])[+ih.dataset.inshr], v = gvCur(); if (!x || !v) return;
+    GV.mk = x.team===v.a ? 'sa' : 'sh'; GV.mode = 'actual'; GV.cl = null; GV.f = {...x.f}; GV.fo = true; GV.rg = 'L'+x.win; renderGame();
+    const ox = $('gvOx'); if (ox) ox.scrollIntoView({block:'start'}); return; }
   const md = e.target.closest('[data-gvmode]'); if (md){ GV.mode = md.dataset.gvmode; gvRedraw(); return; }
   const gl = e.target.closest('[data-gvl]'); if (gl){ const v = gvCur(); if (!v) return; const c = gvCtx(v);
     GV.cl = gl.dataset.gvl==='reset' ? null : Math.round((c.line + +gl.dataset.gvl)*100)/100; if (GV.cl===c.mk.line) GV.cl = null; gvRedraw(); return; }
@@ -2289,7 +2432,8 @@ let gvLineT = null;
 $('gv').addEventListener('input', e=>{ if (e.target.id!=='gvLine') return; clearTimeout(gvLineT);
   gvLineT = setTimeout(()=>{ const x = parseFloat(e.target.value.replace('−','-')), v = gvCur(); if (!v || !isFinite(x)) return;
     const c = gvCtx(v); GV.cl = x===c.mk.line ? null : x; gvRedraw(true); }, 150); });
-$('gv').addEventListener('toggle', e=>{ if (e.target.classList && e.target.classList.contains('oxf')) GV.fo = e.target.open; }, true);
+$('gv').addEventListener('toggle', e=>{ if (e.target.classList && e.target.classList.contains('oxf')) GV.fo = e.target.open;
+  if (e.target.classList && e.target.classList.contains('insbt') && e.target.open) insRunBt(); }, true);
 function gvCur(){ const g = DATA.games.find(x=>x[0]===GV.gid); return g ? gameView(g) : null; }
 function gvRedraw(resOnly){  // redraw the hit rate block, not the whole game page
   const v = gvCur(), box = $('gvOx'); if (!v || !box) return;
@@ -2481,7 +2625,10 @@ const OSR = new Map();
 function osRanks(met, side, basis){  // Map 'gid:team' -> that team's rank on the day of that game {rk, rkB (from the bottom), n, v, gp}
   const key = met+'|'+side+'|'+basis; if (OSR.has(key)) return OSR.get(key);
   const out = new Map(), high = osHigh(met, side), col = OSM[met][4], seasons = new Map();
-  for (const g of DATA.games){ if (g[6]===null) continue; const y = seasonOf(g[1]); if (!seasons.has(y)) seasons.set(y, []); seasons.get(y).push(g); }
+  // upcoming games are ranked too (tonight's opponent), from their pregame snapshots; they never add to raw totals.
+  // An unplayed game dated before the last result (cancelled) is skipped so it can't touch finished games' ranks.
+  const lastFin = DATA.games.reduce((m,g)=>g[6]!==null && g[1]>m ? g[1] : m, '');
+  for (const g of DATA.games){ if (g[6]===null && g[1]<=lastFin) continue; const y = seasonOf(g[1]); if (!seasons.has(y)) seasons.set(y, []); seasons.get(y).push(g); }
   const rawVal = a => { const q = (x, n) => n>0 ? x/n : null;
     return met==='pts' ? q(a.pts, a.n) : met==='epa' ? q(a.epa, a.plays) : met==='sr' ? q(a.succ, a.plays) : met==='rush' ? q(a.epa-a.pe, a.plays-a.pp)
       : met==='pass' ? q(a.pe, a.pp) : met==='hav' ? q(a.hav, a.plays) : met==='fd' ? q(a.tpts, a.trips) : met==='ex' ? q(a.ex, a.pex) : met==='tov' ? q(a.tov, a.n) : null; };
@@ -2501,6 +2648,7 @@ function osRanks(met, side, basis){  // Map 'gid:team' -> that team's rank on th
         const better = high ? n-atMost(e.v) : below(e.v), worse = high ? below(e.v) : n-atMost(e.v);
         out.set(g[0]+':'+t, {rk: better+1, rkB: worse+1, n, v: e.v, gp: e.gp}); }
       if (basis==='raw') for (const g of day){   // raw totals only count games before the next date
+        if (g[6]===null) continue;
         if (met==='pts'){ for (const [t, us, them] of [[g[3],g[6],g[7]],[g[4],g[7],g[6]]]){ const a = acc(t); a.n++; a.pts += side==='d' ? them : us; } continue; }
         for (const r of rows.get(g[0])||[]){ const a = acc(side==='o' ? r[2] : r[3]);
           a.n++; a.plays+=r[5]; a.epa+=r[6]; a.succ+=r[7]; a.pp+=r[8]; a.pe+=r[9]; a.tov+=r[10]; a.ex+=r[14]; a.pex+=r[15]; a.hav+=r[16]; a.trips+=r[17]; a.tpts+=r[18]; } }
@@ -2864,7 +3012,7 @@ function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
   goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
 function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
-  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; GV.cl = null; GV.f = {}; GV.fo = false; AN.more = false; PP.team = null; PP.pid = null; PP.line = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
+  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; GV.cl = null; GV.f = {}; GV.fo = false; AN.more = false; PP.team = null; PP.pid = null; PP.line = null; GV.rg = 'L10'; GV.tt = null; INSV.team = 'both'; INSV.all = false; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');
