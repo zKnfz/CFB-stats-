@@ -158,6 +158,17 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .ox .rates{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--data);font-size:12px;margin-top:8px}
 .ox .rates span{border:1px solid var(--line);border-radius:6px;padding:3px 7px;color:var(--muted)}
 .ox .rates b{margin-left:4px}.ox .rates .hi{color:var(--good)}.ox .rates .lo{color:var(--bad)}
+.ox .oxmode{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap}
+.ox .oxmode .oxwhy{flex-basis:100%;margin:2px 0 0}
+.ox .oxl{display:inline-flex;align-items:center;gap:4px;margin-top:10px;font:600 13px var(--data)}
+.ox .oxl label{color:var(--muted);margin-right:2px}
+.ox .oxl input{width:62px;font:600 14px var(--data);text-align:center;padding:5px 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.ox .oxl button{font:600 13px var(--data);min-width:30px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+.ox .oxl button.note{min-width:0;color:var(--muted)}
+.ox .oxf{margin-top:8px}.ox .oxf summary{cursor:pointer}
+.ox .oxfg{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:6px;align-items:flex-end}
+.ox .oxfg label{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted)}
+.ox .oxfg select{font:13px var(--data);padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
 .betbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
 .betbar .px{font:700 16px var(--data);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;background:var(--panel)}
 .mtx td{font-size:13px}
@@ -1717,6 +1728,19 @@ function anCard(x, t, w){ const c = x.c, g = c.g, v = c.v, o = anOutcome(c), A =
       <span>Final <b>${res}</b></span>${badges.map(b=>`<span class="anb">${b}</span>`).join('')}</div>
     <div class="note anwhy">Why this matches ›</div></summary>
     ${anWhy(t, c, w)}<p style="margin:6px 0 0"><span class="tmlink glink" data-gid="${g[0]}" tabindex="0" role="link">Open this game ›</span>${x.cover<1?` <span class="note">Compared on ${Math.round(x.cover*100)}% of the feature weight, the rest was missing for that game.</span>`:''}</p></details>`; }
+function gvTonight(v){  // tonight's away spread and total; a typed custom line in the hit rate block replaces the market's for its bet
+  let sa = v.spread, tot = v.total, cs = false, ct = false;
+  if (GV.cl!=null && GV.mk==='sa'){ sa = GV.cl; cs = true; }
+  if (GV.cl!=null && GV.mk==='sh'){ sa = -GV.cl; cs = true; }
+  if (GV.cl!=null && (GV.mk==='ov' || GV.mk==='un')){ tot = GV.cl; ct = true; }
+  return {sa, tot, cs, ct}; }
+function anTonight(v){  // the analogs' final scores graded against tonight's numbers, next to their own lines (actual ATS)
+  const L = AN.last; if (!L || L.gid!==v.gid || !L.list.length) return '';
+  const T = gvTonight(v), A = L.A, sA = T.sa==null ? null : (A===v.a ? T.sa : -T.sa), os = L.list.map(x=>anOutcome(x.c));
+  const r = sA==null ? null : rate(os, o=>o.m+sA), ou = T.tot==null ? null : rate(os, o=>o.pts-T.tot);
+  return `<div class="k">A-like side, would cover this line <span class="src d">DERIVED</span></div>
+    <b>${r ? `${r.w}-${r.l}-${r.p}`+recPct(r) : '<span class="na">N/A</span>'}</b>
+    <div class="s">${sA==null ? 'no line posted' : `${esc(ab(A))} ${spreadTxt(sA)}${T.cs?' (custom)':''}`}${ou ? `; over ${T.tot}${T.ct?' (custom)':''}: ${ou.w}-${ou.l}-${ou.p}` : ''}</div>`; }
 function gvAnalogs(v){
   if (!FPX) return `<div class="panel"><p class="note">This build has no pregame fingerprints. Rebuild with the current pipeline to get Games Like This.</p></div>`;
   const res = anSearch(v.gid, AN), p = AN_PRESETS[AN.preset];
@@ -1729,12 +1753,14 @@ function gvAnalogs(v){
   if (res.err==='nofp') return `<div class="panel">${ctl}<p class="note">No pregame fingerprint for this game (the first week of 2004 has no prior season to start from).</p></div>`;
   if (res.err==='nofeat') return `<div class="panel">${ctl}<p class="note">This game is missing every feature this preset uses (${res.missing.map(i=>esc(AN_FEATS[i].lab)).join(', ')}). ${AN.preset==='market'?'There is no posted line yet.':''}</p></div>`;
   const list = res.list.slice(0, AN.n), S = anSummary(list), t = res.t, w = res.w;
+  AN.last = {gid: v.gid, list, A: t.v.A};
   const shown = AN.more ? list : list.slice(0, 5);
   const qcls = {Excellent:'hg2', Good:'hg1', Weak:'', None:'na'}[S.quality];
   const sum = S.n ? `<div class="kgrid ansum">
       <div><div class="k">Analog quality <span class="src d">DERIVED</span></div><b><span class="cell ${qcls}">${S.quality}</span></b><div class="s">${S.n} game${S.n===1?'':'s'}, median match ${S.med.toFixed(0)}%</div></div>
       <div><div class="k">A-like side, straight up <span class="src h">HIST</span></div><b>${recTxt(S.su)}</b><div class="s">avg margin ${naTxt(S.m,f1)}</div></div>
-      <div><div class="k">A-like side, ATS <span class="src h">HIST</span></div><b>${recTxt(S.ats)}${recPct(S.ats)}</b><div class="s">${S.ats.n?`avg line A ${spreadTxt(-S.sp)}, vs line ${f1(S.vsLine)}`:'no lined analogs'}</div></div>
+      <div><div class="k">A-like side, actual ATS <span class="src h">HIST</span></div><b>${recTxt(S.ats)}${recPct(S.ats)}</b><div class="s">${S.ats.n?`avg line A ${spreadTxt(-S.sp)}, vs line ${f1(S.vsLine)}`:'no lined analogs'}</div></div>
+      <div id="anTonight">${anTonight(v)}</div>
       <div><div class="k">Favorite <span class="src h">HIST</span></div><b>${recTxt(S.favSu)} SU</b><div class="s">${recTxt(S.favAts)} ATS</div></div>
       <div><div class="k">Totals <span class="src h">HIST</span></div><b>${recTxt(S.ou)} O/U</b><div class="s">avg ${naTxt(S.pts,x=>x.toFixed(1))} pts${S.tot!=null?`, avg total ${S.tot.toFixed(1)}`:''}</div></div>
       <div><div class="k">Vs model <span class="src d">DERIVED</span></div><b>${naTxt(S.vsModel,f1)}</b><div class="s">A-like margin minus its pregame projection (${naTxt(S.mPred,f1)})</div></div>
@@ -1942,7 +1968,9 @@ function gvProps(v){
 }
 
 // ---------- Game Research view ----------
-let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null};
+// mode: 'line' grades past games against tonight's (or a typed) number, 'actual' against each game's own closing line.
+// cl: typed custom line for the selected bet, null = market. f: hit rate filters (sideMatch keys). fo: filter panel open.
+let GV = {gid:null, range:'season', mk:null, rg:'L10', tt:null, mode:'line', cl:null, f:{}, fo:false};
 function gvRangeSet(kind){
   const g = DATA.games.find(x=>x[0]===GV.gid); if (!g) return;
   const date = g[1], y = seasonOf(date), [lo, hi] = ALL.span[y], end = g[6]===null ? hi : addDays(date, -1);  // past games: nothing from that day on
@@ -2006,32 +2034,86 @@ function gvMarkets(v){  // every bet this game has a number for, plus the moneyl
     m.push({k, team:t, kind:'ml', line:0, label:`${ab(t)} to win`, px}); }
   return m;
 }
-function gvSample(v, mk, team, range){  // finished games before this one, from `team`'s side, graded against tonight's number
-  const opp = team===v.h ? v.a : v.h, y = seasonOf(v.date), yi = SEASONS.indexOf(y);
-  let gs = teamGames(team).filter(g=>g[1]<v.date).sort((a,b)=>a[1]<b[1]?-1:1);
-  if (range[0]==='L') gs = gs.slice(-(+range.slice(1)));
-  else if (range==='season') gs = gs.filter(g=>seasonOf(g[1])===y);
-  else if (range==='prev') gs = gs.filter(g=>seasonOf(g[1])===SEASONS[yi-1]);
-  else if (range==='h2h') gs = gs.filter(g=>g[3]===opp||g[4]===opp).slice(-10);
-  return gs.map(g=>{ const home = g[3]===team, m = home?g[6]-g[7]:g[7]-g[6], pts = g[6]+g[7], o = home?g[4]:g[3];
+// Finished games before this one, from `team`'s side. Order matters: eligibility first (situation filters, then
+// "has a closing line" in actual mode, then season, last season or head to head), and only then Last N.
+// So L5 with Home on means the last 5 home games, not the home games among the last 5.
+// o.f: sideMatch filters. o.actual: grade each game against its own closing line (or total) instead of tonight's.
+// o.line: the number to grade against in "would cover" mode, from `team`'s side (defaults to the market's).
+function gvSample(v, mk, team, range, o={}){
+  const opp = team===v.h ? v.a : v.h, yi = SEASONS.indexOf(seasonOf(v.date)), f = o.f || {};
+  const actual = !!o.actual && mk.kind!=='ml', line = o.line ?? mk.line;
+  let xs = tfTeam(team).filter(x=>x.date<v.date && sideMatch(x, f));
+  if (actual) xs = xs.filter(x=>mk.kind==='ou' ? x.tot!=null : x.spread!=null);
+  if (range==='season') xs = xs.filter(x=>x.y===+SEASONS[yi]);
+  else if (range==='prev') xs = xs.filter(x=>x.y===+SEASONS[yi-1]);
+  else if (range==='h2h') xs = xs.filter(x=>x.opp===opp);
+  else if (range[0]==='L') xs = xs.slice(-(+range.slice(1)));
+  return xs.map(x=>{ const g = x.g, m = x.us-x.them, pts = x.us+x.them;
     let val, hit;
-    if (mk.kind==='ou'){ val = pts; hit = Math.sign(pts-mk.line)*(mk.over?1:-1); }
-    else { val = m; hit = Math.sign(m + mk.line); }   // ats: margin plus tonight's spread; ml: line is 0
-    return {g, lab: ab(o), sub: g[1].slice(5).replace('-','/'), val, hit,
-      tip: `${fmtDate(g[1])} ${home&&!g[5]?'vs':g[5]?'vs':'at'} ${nm(o)}: ${home?g[6]:g[7]}-${home?g[7]:g[6]}${mk.kind==='ou'?`, ${pts} total points`:`, margin ${f1(m)}`}${g[9]!=null?`, that game's line ${spreadTxt(home?-g[9]:g[9])}`:''}`}; });
+    if (mk.kind==='ou'){ const ref = actual ? x.tot : line; val = actual ? pts-x.tot : pts; hit = Math.sign(pts-ref)*(mk.over?1:-1); }
+    else if (mk.kind==='ml'){ val = m; hit = Math.sign(m); }
+    else { const ref = actual ? x.spread : line; val = actual ? m+x.spread : m; hit = Math.sign(m+ref); }   // spread: margin plus the spread
+    return {g, x, lab: ab(x.opp), sub: x.date.slice(5).replace('-','/'), val, hit,
+      tip: `${fmtDate(x.date)} ${x.home||x.neu?'vs':'at'} ${nm(x.opp)}${x.neu?' (neutral)':''}: ${x.us}-${x.them}, margin ${f1(m)}, ${pts} total points`
+        + `${x.spread!=null?`, that game's line ${spreadTxt(x.spread)}`:''}${x.tot!=null?`, total ${x.tot}`:''}`}; });
 }
-function gvOutlier(v){
+function wlp(s){ let w=0,l=0,p=0; for (const x of s) x.hit>0?w++:x.hit<0?l++:p++; return {w,l,p,n:w+l}; }  // n counts decided games only
+const wlpTxt = r => `${r.w}-${r.l}-${r.p}`;
+function median(xs){ if (!xs.length) return null; const s = [...xs].sort((a,b)=>a-b), i = s.length>>1; return s.length%2 ? s[i] : (s[i-1]+s[i])/2; }
+const GV_FILTERS = [  // [sideMatch key, label, options]; kept short on purpose, Trend Finder has the full set
+  ['site','Site',[['home','Home'],['away','Away'],['neu','Neutral']]],
+  ['role','Closing line',[['fav','Favorite'],['dog','Underdog']]],
+  ['ork','Opponent',[['10','T-Rank top 10'],['25','T-Rank top 25'],['u','Outside top 25']]],
+  ['conf','Game',[['y','Conference'],['n','Non conference']]],
+  ['rest','Rest',[['bye','Off a bye'],['short','Short week'],['norm','Normal week']]],
+  ['prev','Last game',[['W','Off a win'],['L','Off a loss']]]];
+function gvCtx(v){  // which bet, whose games, and the number being tested
   const mks = gvMarkets(v);
   let mk = mks.find(x=>x.k===GV.mk);
   if (!mk){ const lean = v.spreadEdge==null ? null : (v.spreadEdge>0 ? 'sh' : 'sa'); mk = mks.find(x=>x.k===lean) || mks.find(x=>x.kind==='ats') || mks[0]; GV.mk = mk.k; }
   const team = mk.kind==='ou' ? (GV.tt===v.a ? v.a : v.h) : mk.team, opp = team===v.h ? v.a : v.h;
+  const actual = GV.mode==='actual' && mk.kind!=='ml', custom = GV.cl!=null && mk.kind!=='ml', line = custom ? GV.cl : mk.line;
+  return {mks, mk, team, opp, actual, custom, line, opt: {f: GV.f, actual, line}};
+}
+function gvOxRes(v){  // the part of the block that changes while a custom line is typed
+  const {mk, team, actual, custom, line, opt} = gvCtx(v);
   const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],['season',seasonOf(v.date)],['prev',SEASONS[SEASONS.indexOf(seasonOf(v.date))-1]||'Prev'],['h2h','H2H']];
-  const smp = gvSample(v, mk, team, GV.rg), dec = smp.filter(x=>x.hit!==0), k = dec.filter(x=>x.hit>0).length;
-  const avg = smp.length ? smp.reduce((t,x)=>t+x.val,0)/smp.length : null;
-  const rateOf = r => { const s = gvSample(v, mk, team, r).filter(x=>x.hit!==0), w = s.filter(x=>x.hit>0).length; return s.length ? {w, n:s.length} : null; };
-  const rates = ranges.map(([r,l])=>{ const x = rateOf(r); if (!x) return ''; const q = x.w/x.n;
-    return `<span>${esc(l)}<b class="${x.n>=5&&q>=0.7?'hi':x.n>=5&&q<=0.3?'lo':''}">${x.n<5?x.w+'/'+x.n:Math.round(q*100)+'%'}</b></span>`; }).join('');
-  const what = mk.kind==='ou' ? `${nm(team)}'s games went ${mk.over?'over':'under'} ${mk.line}` : mk.kind==='ml' ? `${nm(team)} won` : `${nm(team)} covered ${spreadTxt(mk.line)}`;
+  const smp = gvSample(v, mk, team, GV.rg, opt), r = wlp(smp), vals = smp.map(x=>x.val);
+  const avg = vals.length ? vals.reduce((t,x)=>t+x,0)/vals.length : null, med = median(vals);
+  const rates = ranges.map(([rg,l])=>{ const x = wlp(gvSample(v, mk, team, rg, opt)); if (!x.n && !x.p) return ''; const q = x.n ? x.w/x.n : null;
+    return `<span>${esc(l)}<b class="${x.n>=5&&q>=0.7?'hi':x.n>=5&&q<=0.3?'lo':''}">${wlpTxt(x)}${x.n>=5?` ${Math.round(q*100)}%`:''}</b></span>`; }).join('');
+  const lineTxt = mk.kind==='ou' ? `${line}` : spreadTxt(line);
+  const what = mk.kind==='ml' ? `${nm(team)} won`
+    : mk.kind==='ou' ? (actual ? `${nm(team)}'s games went ${mk.over?'over':'under'} that day's total` : `${nm(team)}'s games would have gone ${mk.over?'over':'under'} ${lineTxt}`)
+    : (actual ? `${nm(team)} covered that day's closing line` : `${nm(team)} would have covered ${lineTxt}`);
+  const valLbl = actual ? (mk.kind==='ou' ? 'vs total' : 'vs line') : (mk.kind==='ou' ? 'total' : 'margin'), fv = x => mk.kind==='ou'&&!actual ? x.toFixed(1) : f1(x);
+  const nf = Object.values(GV.f).filter(Boolean).length;
+  return `<div class="hr"><b>${smp.length?wlpTxt(r):'N/A'}</b><span>${smp.length?`${r.n?Math.round(100*r.w/r.n)+'% of decided':'no decided games'} · ${r.p} push${r.p===1?'':'es'} · ${esc(what)}${custom&&!actual?' <span class="src d">CUSTOM</span>':''}`
+      :`no games ${nf?'pass these filters ':''}in this range`}</span>
+      ${avg==null?'':`<span class="note">${valLbl} avg ${fv(avg)}, median ${fv(med)}</span>`}</div>
+    ${lineBars(smp, actual||mk.kind==='ml' ? 0 : mk.kind==='ou' ? line : -line, `${what}, by game`)}
+    <div class="rates" aria-label="Wins, losses and pushes by range">${rates}</div>
+    <p class="note">${actual ? `Bars are each game's ${mk.kind==='ou'?'total points minus its closing total':'margin plus its closing spread'}: above 0 ${mk.kind==='ou'?'went over':'covered'}. Games with no stored line are left out${mk.kind==='ou'?' (totals start in 2013)':''}.`
+      : mk.kind==='ml' ? 'Green won, red lost.'
+      : `Dashed line is ${custom?'your number':"tonight's number"}${mk.kind==='ats'?` (${esc(ab(team))} ${line<0?`needs to win by more than ${(-line).toFixed(1)}`:line>0?`covers by winning or losing by less than ${line.toFixed(1)}`:'needs to win'})`:''}. Every past final score is graded against it, not against that game's own line.`}
+      ${mk.kind==='ml'?'':`Green ${mk.kind==='ou'?'cleared':'covered'}, red didn't, gray pushed.`} Records are wins-losses-pushes; percentages leave pushes out.${nf?' Filters apply first, then the range: L5 is the last 5 games that pass them.':''}</p>`;
+}
+function gvOutlier(v){
+  const {mks, mk, team, opp, actual, custom, line} = gvCtx(v);
+  const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],['season',seasonOf(v.date)],['prev',SEASONS[SEASONS.indexOf(seasonOf(v.date))-1]||'Prev'],['h2h','H2H']];
+  // two ways to grade the same games, one tap apart, each with a one line answer to "what does this measure?"
+  const ou = mk.kind==='ou', modes = mk.kind==='ml' ? '' : `<div class="oxmode">
+      <div class="seg" role="group" aria-label="Grade past games against">
+        <button data-gvmode="line" aria-pressed="${!actual}">${ou?'Would clear this total':'Would cover this line'}</button>
+        <button data-gvmode="actual" aria-pressed="${actual}">${ou?'Actual O/U':'Actual ATS'}</button></div>
+      ${actual ? '' : `<span class="oxl"><label for="gvLine">${ou?'Total':esc(ab(team))}</label><button type="button" data-gvl="-0.5" aria-label="Lower by half a point">−</button><input id="gvLine" inputmode="decimal" autocomplete="off" value="${!ou&&line>0?'+':''}${line}" aria-label="Line to test"><button type="button" data-gvl="0.5" aria-label="Raise by half a point">+</button>${custom?`<button type="button" data-gvl="reset" class="note">Reset to ${ou?mk.line:spreadTxt(mk.line)}</button>`:''}</span>`}
+      <div class="note oxwhy">${actual ? `Each past game against the closing ${ou?'total':'line'} it had that day: did ${ou?'the game beat the market\'s number':`${esc(nm(team))} beat the market`} back then?`
+        : `Each past final score against ${custom?'your':"tonight's"} ${ou?'total':'line'}: how often would that ${ou?'game':'performance'} have ${ou?`gone ${mk.over?'over':'under'}`:'covered'} this number?`}</div></div>`;
+  const nf = Object.values(GV.f).filter(Boolean).length;
+  const filt = `<details class="oxf"${GV.fo?' open':''}><summary class="note">Filters${nf?` <b>(${nf} on)</b>`:''}</summary><div class="oxfg">
+      ${GV_FILTERS.map(([k,l,os])=>`<label>${l}<select data-gvf="${k}"><option value="">Any</option>${os.map(([val,t])=>`<option value="${val}"${GV.f[k]===val?' selected':''}>${t}</option>`).join('')}</select></label>`).join('')}
+      ${nf?'<button type="button" class="chip" data-gvfc="1">Clear filters</button>':''}</div>
+      <p class="note">Home and away leave out neutral site games. Favorite and underdog use that game's closing line. Opponent tier is that season's final T-Rank (hindsight). Short week is 6 days or fewer, a bye 13 or more. More situations are in Trend Finder.</p></details>`;
   // matchup context: each side of the ball, from the current ratings
   const t = current && current.byId.get(team), o = current && current.byId.get(opp);
   const cell = (x, key, f) => x && x[key]!=null ? `${f(x[key])} <span class="r">#${x[key+'Rk']}</span>` : '<span class="na">N/A</span>';
@@ -2054,14 +2136,12 @@ function gvOutlier(v){
   if (mk.kind==='ml' && v.pModelH!=null){ const pm = team===v.h ? v.pModelH : 1-v.pModelH, pk = v.pMktH==null ? null : (team===v.h ? v.pMktH : 1-v.pMktH);
     model = `Model win ${(pm*100).toFixed(1)}%${pk==null?'':`, market ${(pk*100).toFixed(1)}% (${v.mktSrc==='book'?'books, no vig':'Kalshi'})`}`; }
   const ttog = mk.kind==='ou' ? `<div class="seg" role="group" aria-label="Whose games">${[v.a,v.h].map(id=>`<button data-gvt="${id}" aria-pressed="${id===team}">${esc(ab(id))} games</button>`).join('')}</div> ` : '';
-  return `<div class="panel ox oxb">
+  return `<div class="panel ox oxb" id="gvOx">
     <div class="mk" role="group" aria-label="Bet">${mks.map(x=>`<button class="chip" data-gvm="${x.k}" aria-pressed="${x.k===mk.k}">${esc(x.label)} <span class="note">${esc(x.px)}</span></button>`).join('')}</div>
+    ${modes}
     ${ttog}<div class="seg" role="group" aria-label="Games">${ranges.map(([r,l])=>`<button data-gvg="${r}" aria-pressed="${GV.rg===r}">${esc(l)}</button>`).join('')}</div>
-    <div class="hr"><b>${dec.length?`${k}/${dec.length}`:'N/A'}</b><span>${dec.length?`${Math.round(100*k/dec.length)}% · ${esc(what)}${smp.length-dec.length?` (${smp.length-dec.length} push)`:''}`:'no games in this range'}</span>
-      ${avg==null?'':`<span class="note">avg ${mk.kind==='ou'?'total':'margin'} ${mk.kind==='ou'?avg.toFixed(1):f1(avg)}</span>`}</div>
-    ${lineBars(smp, mk.kind==='ou' ? mk.line : -mk.line, `${what}, by game`)}
-    <div class="rates">${rates}</div>
-    <p class="note">Dashed line is tonight's number${mk.kind==='ats'?` (${esc(ab(team))} ${mk.line<0?`needs to win by more than ${(-mk.line).toFixed(1)}`:mk.line>0?`covers by winning or losing by less than ${mk.line.toFixed(1)}`:'needs to win'})`:''}. Green cleared it, red didn't, gray pushed. Past games are graded against tonight's line, not their own.</p>
+    ${filt}
+    <div id="gvOxRes">${gvOxRes(v)}</div>
     ${move||kmv ? `<div class="note" style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${move}${kmv}</div>` : ''}
     <div class="betbar"><div><b>${esc(mk.label)}</b>${model?`<div class="note">${model}</div>`:''}</div>
       <div style="display:flex;gap:8px;align-items:center">${conf?`<span class="cell ${conf.cls}" title="${esc(conf.txt)}">${conf.lbl}</span>`:''}<span class="px">${esc(mk.px)}</span></div></div>
@@ -2069,7 +2149,7 @@ function gvOutlier(v){
       <p class="note">${mk.kind==='ml' ? 'Win streaks are already in the moneyline price, so the hit rate above mostly tells you the team is good, which the market knows.' : (()=>{ const B = HR10[mk.kind==='ou'?'ou':'ats'], s10 = gvSample(v, mk, team, 'L10').filter(x=>x.hit!==0); if (s10.length<10) return 'Needs 10 recent games to compare against history.';
         const kk = s10.filter(x=>x.hit>0).length, over = mk.kind!=='ou' || mk.over, s = {c:0,n:0};
         for (let i=0;i<=10;i++) if (over ? i>=kk : i<=10-kk){ s.c += over ? B[i].c : B[i].n-B[i].c; s.n += B[i].n; }
-        return `Since ${mk.kind==='ou'?2013:2004}, when a team had cleared that game's number in ${kk}+ of its previous 10, it cleared it next time <b>${s.n?(100*s.c/s.n).toFixed(1):'n/a'}%</b> of ${s.n.toLocaleString()} games. Break even at −110 is 52.4%. Books move the line to account for recent form, so a strong L10 alone has not been a reason to bet.`; })()}</p>
+        return `Since ${mk.kind==='ou'?2013:2004}, when a team had cleared that game's number in ${kk}+ of its previous 10, it cleared it next time <b>${s.n?(100*s.c/s.n).toFixed(1):'n/a'}%</b> of ${s.n.toLocaleString()} games. Break even at −110 is 52.4%. Books move the line to account for recent form, so a strong L10 alone has not been a reason to bet.${actual||custom||nf?' This check always uses the last 10 games against tonight\'s market number with no filters, the way the backtest did.':''}`; })()}</p>
       <p class="note">${conf?esc(conf.txt):''}</p></details>
     ${mtx}
   </div>`;
@@ -2172,7 +2252,11 @@ $('gv').addEventListener('click', e=>{
   if (e.target.closest('[data-anmore]')){ AN.more = !AN.more; renderGame(); return; }
   const ad = e.target.closest('[data-and]'); if (ad){ const k = ad.dataset.and; AN.off = ad.checked ? AN.off.filter(x=>x!==k) : [...AN.off, k]; renderGame();
     const d = $('gv').querySelector('.anadv'); if (d) d.open = true; return; }
-  const m = e.target.closest('[data-gvm]'); if (m){ GV.mk = m.dataset.gvm; renderGame(); return; }
+  const md = e.target.closest('[data-gvmode]'); if (md){ GV.mode = md.dataset.gvmode; gvRedraw(); return; }
+  const gl = e.target.closest('[data-gvl]'); if (gl){ const v = gvCur(); if (!v) return; const c = gvCtx(v);
+    GV.cl = gl.dataset.gvl==='reset' ? null : Math.round((c.line + +gl.dataset.gvl)*100)/100; if (GV.cl===c.mk.line) GV.cl = null; gvRedraw(); return; }
+  if (e.target.closest('[data-gvfc]')){ GV.f = {}; gvRedraw(); return; }
+  const m = e.target.closest('[data-gvm]'); if (m){ if (GV.mk!==m.dataset.gvm) GV.cl = null; GV.mk = m.dataset.gvm; renderGame(); return; }
   const q = e.target.closest('[data-gvg]'); if (q){ GV.rg = q.dataset.gvg; renderGame(); return; }
   const tt = e.target.closest('[data-gvt]'); if (tt){ GV.tt = +tt.dataset.gvt; renderGame(); return; }
   const r = e.target.closest('[data-gvr]'); if (r){ if (r.dataset.gvr==='custom'){ GV.range='custom'; window.scrollTo({top:0}); $('from').focus(); renderGame(); } else gvRangeSet(r.dataset.gvr); return; }
@@ -2181,7 +2265,20 @@ $('gv').addEventListener('click', e=>{
   if (e.target.id==='gvMatch'){ const g = DATA.games.find(x=>x[0]===GV.gid); openGameMatchup(g); return; }
   if (e.target.id==='gvSave') wlSaveGame(GV.gid);
 });
-$('gv').addEventListener('change', e=>{ if (e.target.id==='ppLine'){ const x = parseFloat(e.target.value); if (isFinite(x)){ PP.line = x; renderGame(); } } });
+$('gv').addEventListener('change', e=>{ if (e.target.id==='ppLine'){ const x = parseFloat(e.target.value); if (isFinite(x)){ PP.line = x; renderGame(); } }
+  const f = e.target.closest('[data-gvf]'); if (f){ GV.f = {...GV.f, [f.dataset.gvf]: f.value || undefined}; gvRedraw(); }
+  if (e.target.id==='gvLine') gvRedraw(); });  // done typing: refresh the labels and the reset button too
+// Typing a line recalculates only the results under the box (and the analog row), so the box keeps focus.
+let gvLineT = null;
+$('gv').addEventListener('input', e=>{ if (e.target.id!=='gvLine') return; clearTimeout(gvLineT);
+  gvLineT = setTimeout(()=>{ const x = parseFloat(e.target.value.replace('−','-')), v = gvCur(); if (!v || !isFinite(x)) return;
+    const c = gvCtx(v); GV.cl = x===c.mk.line ? null : x; gvRedraw(true); }, 150); });
+$('gv').addEventListener('toggle', e=>{ if (e.target.classList && e.target.classList.contains('oxf')) GV.fo = e.target.open; }, true);
+function gvCur(){ const g = DATA.games.find(x=>x[0]===GV.gid); return g ? gameView(g) : null; }
+function gvRedraw(resOnly){  // redraw the hit rate block, not the whole game page
+  const v = gvCur(), box = $('gvOx'); if (!v || !box) return;
+  if (resOnly){ const r = $('gvOxRes'); if (r) r.innerHTML = gvOxRes(v); } else box.outerHTML = gvOutlier(v);
+  const at = $('anTonight'); if (at) at.innerHTML = anTonight(v); }
 $('gv').addEventListener('keydown', e=>{ if (e.key==='Enter' && e.target.closest('[data-aud],[data-vso]')) e.target.click(); });
 
 // ---------- Team Research view ----------
@@ -2283,7 +2380,7 @@ $('gsearch').addEventListener('change', e=>{ const q = e.target.value.trim().toL
   if (hit!=null){ openTeam(hit); e.target.value = ''; e.target.blur(); } });
 
 // ---------- Trend Finder: historical queries over every finished game, from each team's side ----------
-let TFS = null, tfShown = 200;
+let TFS = null, TFT = null, tfShown = 200;
 function tfSides(){
   if (TFS) return TFS; TFS = []; const T = DATA.tot||{}, last = new Map();
   const gs = DATA.games.filter(g=>g[6]!==null).sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:a[0]-b[0]);
@@ -2306,10 +2403,17 @@ function tfQuery(){
   const v = id => $(id).value, n = id => { const x = parseFloat($(id).value); return isNaN(x) ? null : x; };
   const team = teamByName(v('tf-team')), opp = teamByName(v('tf-opp')), y0 = +v('tf-y0'), y1 = +v('tf-y1'), d0 = v('tf-d0'), d1 = v('tf-d1');
   const [s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef] = ['tf-s0','tf-s1','tf-t0','tf-t1','tf-r0','tf-r1','tf-q0','tf-q1','tf-ooff','tf-odef'].map(n);
-  const site = v('tf-site'), conf = v('tf-conf'), role = v('tf-role'), ork = v('tf-ork'), prev = v('tf-prev'), rest = v('tf-rest'), model = v('tf-model');
+  const f = {s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef, site: v('tf-site'), conf: v('tf-conf'), role: v('tf-role'), ork: v('tf-ork'), prev: v('tf-prev'), rest: v('tf-rest'), model: v('tf-model')};
   const rows = tfSides().filter(x=>{
     if (team===-1 || opp===-1) return false; if (team!=null && x.id!==team) return false; if (opp!=null && x.opp!==opp) return false;
     if (x.y<y0 || x.y>y1) return false; if (d0 && x.date<d0) return false; if (d1 && x.date>d1) return false;
+    return sideMatch(x, f); });
+  return {rows, team, opp};
+}
+// Situation filters on one tfSides() row, shared by Trend Finder and the game page's hit rate block.
+// Missing or empty fields are skipped. Home and away leave out neutral site games; favorite and underdog use that game's closing line.
+function sideMatch(x, f){
+  const {site, conf, role, s0, s1, t0, t1, ork, r0, r1, ooff, odef, q0, q1, prev, rest, model} = f;
     if (site==='home' && !(x.home&&!x.neu)) return false; if (site==='away' && (x.home||x.neu)) return false; if (site==='neu' && !x.neu) return false;
     if (conf==='y' && !x.confGame) return false; if (conf==='n' && x.confGame) return false;
     if (role==='fav' && !(x.spread!=null && x.spread<0)) return false; if (role==='dog' && !(x.spread!=null && x.spread>0)) return false;
@@ -2322,8 +2426,11 @@ function tfQuery(){
     if (prev && x.prev!==prev) return false;
     if (rest==='bye' && !(x.rest!=null && x.rest>=13)) return false; if (rest==='short' && !(x.rest!=null && x.rest<=6)) return false; if (rest==='norm' && !(x.rest!=null && x.rest>=7 && x.rest<=12)) return false;
     if (model==='like' && !(x.modelEdge!=null && x.modelEdge>0)) return false; if (model==='fade' && !(x.modelEdge!=null && x.modelEdge<0)) return false;
-    return true; });
-  return {rows, team, opp};
+    return true;
+}
+function tfTeam(id){  // one team's tfSides() rows, oldest first
+  if (!TFT){ TFT = new Map(); for (const x of tfSides()){ if (!TFT.has(x.id)) TFT.set(x.id, []); TFT.get(x.id).push(x); } }
+  return TFT.get(id) || [];
 }
 function renderTF(){
   const {rows, team, opp} = tfQuery();
@@ -2676,7 +2783,7 @@ function openGameMatchup(g, sideId){
   const [,date,,h,a,neu,,,pred,veg,,kh,ka] = g, A = sideId===h ? h : a, home = A===h;
   goToMatchup(A, home?a:h, neu?0:(home?1:-1), date, home?kh:ka, home?ka:kh, veg==null?null:(home?-veg:veg), pred==null?null:(home?pred:-pred)); }
 function openGame(gid, push=true){ const g = DATA.games.find(x=>x[0]===gid); if (!g) return;
-  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; AN.more = false; PP.team = null; PP.pid = null; PP.line = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
+  if (GV.gid!==gid){ GV.gid = gid; GV.mk = null; GV.cl = null; GV.f = {}; GV.fo = false; AN.more = false; PP.team = null; PP.pid = null; PP.line = null; GV.rg = 'L10'; GV.tt = null; gvRangeSet('season'); } else renderGame();
   $('tab-game').hidden = false; $('tab-game').textContent = `${ab(g[4])} ${g[5]?'vs':'@'} ${ab(g[3])}`; showTab('game'); window.scrollTo({top:0});
   if (push) history.pushState(null, '', '#game/'+gid); }
 function route(){ const hsh = location.hash.slice(1), [kind, id] = hsh.split('/');
