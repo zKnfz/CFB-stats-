@@ -168,7 +168,8 @@ tr.log>td{background:var(--bg);padding:10px 8px 14px;text-align:left;white-space
 .ox .oxf{margin-top:8px}.ox .oxf summary{cursor:pointer}
 .ox .oxfg{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:6px;align-items:flex-end}
 .ox .oxfg label{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted)}
-.ox .oxfg select{font:13px var(--data);padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.ox .oxos{margin-top:8px}.ox .oxosr,.tfos{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}.tfos select{flex:1 1 30%;min-width:0}
+.ox .oxosr select,.ox .oxfg select{font:13px var(--data);padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
 .betbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
 .betbar .px{font:700 16px var(--data);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;background:var(--panel)}
 .mtx td{font-size:13px}
@@ -415,11 +416,16 @@ input[type=text],input[type=search]{font:500 14px var(--data);color:var(--ink);b
         <div class="field"><label for="tf-role">Fav / dog</label><select id="tf-role"><option value="">Any</option><option value="fav">Favorite</option><option value="dog">Underdog</option></select></div>
         <div class="field"><span class="lbl">Spread (team)</span><div class="rng"><input type="number" id="tf-s0" step="0.5" placeholder="min"><input type="number" id="tf-s1" step="0.5" placeholder="max"></div></div>
         <div class="field"><span class="lbl">Total</span><div class="rng"><input type="number" id="tf-t0" step="0.5" placeholder="min"><input type="number" id="tf-t1" step="0.5" placeholder="max"></div></div>
-        <div class="field"><label for="tf-ork">Opponent T-Rank</label><select id="tf-ork"><option value="">Any</option><option value="10">Top 10</option><option value="25">Top 25</option><option value="u">Unranked (26+)</option></select></div>
+        <div class="field"><label for="tf-ork">Opp final T-Rank (hindsight)</label><select id="tf-ork"><option value="">Any</option><option value="10">Top 10</option><option value="25">Top 25</option><option value="u">Unranked (26+)</option></select></div>
         <div class="field"><span class="lbl">Opp rating</span><div class="rng"><input type="number" id="tf-r0" step="1" placeholder="min"><input type="number" id="tf-r1" step="1" placeholder="max"></div></div>
         <div class="field"><label for="tf-ooff">Opp offense rank ≤</label><input type="number" id="tf-ooff" min="1" step="1" placeholder="any"></div>
         <div class="field"><label for="tf-odef">Opp defense rank ≤</label><input type="number" id="tf-odef" min="1" step="1" placeholder="any"></div>
         <div class="field"><span class="lbl">Opp SOS</span><div class="rng"><input type="number" id="tf-q0" step="1" placeholder="min"><input type="number" id="tf-q1" step="1" placeholder="max"></div></div>
+        <div class="field" style="grid-column:span 2"><span class="lbl">Opp strength at the time <span class="src h" title="Ranked among FBS teams as of each game, never with later results">POINT IN TIME</span></span><div class="tfos">
+          <select id="tf-osSide" aria-label="Side of the ball"><option value="d">Defense</option><option value="o">Offense</option></select>
+          <select id="tf-osMet" aria-label="Metric"></select>
+          <select id="tf-osTier" aria-label="Rank"><option value="">Any rank</option><option value="10">Top 10</option><option value="25">Top 25</option><option value="50">Top 50</option><option value="b25">Bottom 25</option></select>
+          <select id="tf-osBasis" aria-label="Basis"><option value="adj">Adjusted</option><option value="raw">Raw</option></select></div></div>
         <div class="field"><label for="tf-prev">Previous game</label><select id="tf-prev"><option value="">Any</option><option value="W">Won</option><option value="L">Lost</option></select></div>
         <div class="field"><label for="tf-rest">Rest</label><select id="tf-rest"><option value="">Any</option><option value="bye">Off a bye (13+ days)</option><option value="short">Short week (6 or fewer)</option><option value="norm">Normal (7 to 12)</option></select></div>
         <div class="field"><label for="tf-model">Model pregame pick</label><select id="tf-model"><option value="">Any</option><option value="like">Liked this team vs the line</option><option value="fade">Faded this team</option></select></div>
@@ -2041,7 +2047,7 @@ function gvMarkets(v){  // every bet this game has a number for, plus the moneyl
 // o.line: the number to grade against in "would cover" mode, from `team`'s side (defaults to the market's).
 function gvSample(v, mk, team, range, o={}){
   const opp = team===v.h ? v.a : v.h, yi = SEASONS.indexOf(seasonOf(v.date)), f = o.f || {};
-  const actual = !!o.actual && mk.kind!=='ml', line = o.line ?? mk.line;
+  const actual = !!o.actual && mk.kind!=='ml', line = o.line ?? mk.line, os = osResolve(f);
   let xs = tfTeam(team).filter(x=>x.date<v.date && sideMatch(x, f));
   if (actual) xs = xs.filter(x=>mk.kind==='ou' ? x.tot!=null : x.spread!=null);
   if (range==='season') xs = xs.filter(x=>x.y===+SEASONS[yi]);
@@ -2055,7 +2061,7 @@ function gvSample(v, mk, team, range, o={}){
     else { const ref = actual ? x.spread : line; val = actual ? m+x.spread : m; hit = Math.sign(m+ref); }   // spread: margin plus the spread
     return {g, x, lab: ab(x.opp), sub: x.date.slice(5).replace('-','/'), val, hit,
       tip: `${fmtDate(x.date)} ${x.home||x.neu?'vs':'at'} ${nm(x.opp)}${x.neu?' (neutral)':''}: ${x.us}-${x.them}, margin ${f1(m)}, ${pts} total points`
-        + `${x.spread!=null?`, that game's line ${spreadTxt(x.spread)}`:''}${x.tot!=null?`, total ${x.tot}`:''}`}; });
+        + `${x.spread!=null?`, that game's line ${spreadTxt(x.spread)}`:''}${x.tot!=null?`, total ${x.tot}`:''}${os?`. ${nm(x.opp)} ${osFmt(osOppRank(x, os), os)}`:''}`}; });
 }
 function wlp(s){ let w=0,l=0,p=0; for (const x of s) x.hit>0?w++:x.hit<0?l++:p++; return {w,l,p,n:w+l}; }  // n counts decided games only
 const wlpTxt = r => `${r.w}-${r.l}-${r.p}`;
@@ -2063,10 +2069,11 @@ function median(xs){ if (!xs.length) return null; const s = [...xs].sort((a,b)=>
 const GV_FILTERS = [  // [sideMatch key, label, options]; kept short on purpose, Trend Finder has the full set
   ['site','Site',[['home','Home'],['away','Away'],['neu','Neutral']]],
   ['role','Closing line',[['fav','Favorite'],['dog','Underdog']]],
-  ['ork','Opponent',[['10','T-Rank top 10'],['25','T-Rank top 25'],['u','Outside top 25']]],
+  ['ork','Final T-Rank (hindsight)',[['10','Top 10'],['25','Top 25'],['u','Outside top 25']]],
   ['conf','Game',[['y','Conference'],['n','Non conference']]],
   ['rest','Rest',[['bye','Off a bye'],['short','Short week'],['norm','Normal week']]],
   ['prev','Last game',[['W','Off a win'],['L','Off a loss']]]];
+const gvNf = () => GV_FILTERS.filter(([k])=>GV.f[k]).length + (GV.f.osTier ? 1 : 0);
 function gvCtx(v){  // which bet, whose games, and the number being tested
   const mks = gvMarkets(v);
   let mk = mks.find(x=>x.k===GV.mk);
@@ -2087,7 +2094,7 @@ function gvOxRes(v){  // the part of the block that changes while a custom line 
     : mk.kind==='ou' ? (actual ? `${nm(team)}'s games went ${mk.over?'over':'under'} that day's total` : `${nm(team)}'s games would have gone ${mk.over?'over':'under'} ${lineTxt}`)
     : (actual ? `${nm(team)} covered that day's closing line` : `${nm(team)} would have covered ${lineTxt}`);
   const valLbl = actual ? (mk.kind==='ou' ? 'vs total' : 'vs line') : (mk.kind==='ou' ? 'total' : 'margin'), fv = x => mk.kind==='ou'&&!actual ? x.toFixed(1) : f1(x);
-  const nf = Object.values(GV.f).filter(Boolean).length;
+  const nf = gvNf();
   return `<div class="hr"><b>${smp.length?wlpTxt(r):'N/A'}</b><span>${smp.length?`${r.n?Math.round(100*r.w/r.n)+'% of decided':'no decided games'} · ${r.p} push${r.p===1?'':'es'} · ${esc(what)}${custom&&!actual?' <span class="src d">CUSTOM</span>':''}`
       :`no games ${nf?'pass these filters ':''}in this range`}</span>
       ${avg==null?'':`<span class="note">${valLbl} avg ${fv(avg)}, median ${fv(med)}</span>`}</div>
@@ -2096,8 +2103,16 @@ function gvOxRes(v){  // the part of the block that changes while a custom line 
     <p class="note">${actual ? `Bars are each game's ${mk.kind==='ou'?'total points minus its closing total':'margin plus its closing spread'}: above 0 ${mk.kind==='ou'?'went over':'covered'}. Games with no stored line are left out${mk.kind==='ou'?' (totals start in 2013)':''}.`
       : mk.kind==='ml' ? 'Green won, red lost.'
       : `Dashed line is ${custom?'your number':"tonight's number"}${mk.kind==='ats'?` (${esc(ab(team))} ${line<0?`needs to win by more than ${(-line).toFixed(1)}`:line>0?`covers by winning or losing by less than ${line.toFixed(1)}`:'needs to win'})`:''}. Every past final score is graded against it, not against that game's own line.`}
-      ${mk.kind==='ml'?'':`Green ${mk.kind==='ou'?'cleared':'covered'}, red didn't, gray pushed.`} Records are wins-losses-pushes; percentages leave pushes out.${nf?' Filters apply first, then the range: L5 is the last 5 games that pass them.':''}</p>`;
+      ${mk.kind==='ml'?'':`Green ${mk.kind==='ou'?'cleared':'covered'}, red didn't, gray pushed.`} Records are wins-losses-pushes; percentages leave pushes out.${nf?' Filters apply first, then the range: L5 is the last 5 games that pass them.':''}${(()=>{ const os = osResolve(GV.f); return os ? ` <b>${esc(os.tierLbl)} ${esc(os.name)}</b> is point-in-time: each opponent's rank among FBS teams on the day of that game (${os.basis==='adj'?'opponent adjusted, from its pregame snapshot':'raw season to date, FBS games only'}), and games only count once an opponent has ${OS_MIN}+ FBS games and ${OS_POOL}+ teams are ranked (so most September games drop out). On desktop, hover a bar for that opponent's rank.` : ''; })()}</p>`;
 }
+function gvOsCtl(){  // one opponent strength filter: side, metric, tier, basis
+  const f = GV.f, met = OSM[f.osMet] ? f.osMet : 'pts', m = OSM[met], side = f.osSide==='o' ? 'o' : 'd', basis = !m[4] ? 'raw' : !m[5] ? 'adj' : f.osBasis==='raw' ? 'raw' : 'adj';
+  const opt = (k, val, txt, cur) => `<option value="${val}"${cur===val?' selected':''}>${txt}</option>`;
+  return `<div class="oxos" role="group" aria-label="Opponent strength at the time of each game"><span class="lbl">Opponent strength <span class="src h" title="Ranked among FBS teams as of each game, never with later results">AT THE TIME</span></span>
+    <div class="oxosr"><select data-gvf="osSide" aria-label="Side of the ball"${met==='r'?' disabled':''}>${opt(0,'d','Defense',side)}${opt(0,'o','Offense',side)}</select>
+    <select data-gvf="osMet" aria-label="Metric">${OS_METRICS.map(x=>opt(0,x[0],x[1],met)).join('')}</select>
+    <select data-gvf="osTier" aria-label="Rank">${opt(0,'','Any rank',f.osTier||'')}${OS_TIERS.map(([k,l])=>opt(0,k,l,f.osTier)).join('')}</select>
+    <select data-gvf="osBasis" aria-label="Basis"${m[4]&&m[5]?'':' disabled'}>${opt(0,'adj','Adjusted',basis)}${opt(0,'raw','Raw',basis)}</select></div></div>`; }
 function gvOutlier(v){
   const {mks, mk, team, opp, actual, custom, line} = gvCtx(v);
   const ranges = [['L5','L5'],['L10','L10'],['L20','L20'],['season',seasonOf(v.date)],['prev',SEASONS[SEASONS.indexOf(seasonOf(v.date))-1]||'Prev'],['h2h','H2H']];
@@ -2109,11 +2124,12 @@ function gvOutlier(v){
       ${actual ? '' : `<span class="oxl"><label for="gvLine">${ou?'Total':esc(ab(team))}</label><button type="button" data-gvl="-0.5" aria-label="Lower by half a point">−</button><input id="gvLine" inputmode="decimal" autocomplete="off" value="${!ou&&line>0?'+':''}${line}" aria-label="Line to test"><button type="button" data-gvl="0.5" aria-label="Raise by half a point">+</button>${custom?`<button type="button" data-gvl="reset" class="note">Reset to ${ou?mk.line:spreadTxt(mk.line)}</button>`:''}</span>`}
       <div class="note oxwhy">${actual ? `Each past game against the closing ${ou?'total':'line'} it had that day: did ${ou?'the game beat the market\'s number':`${esc(nm(team))} beat the market`} back then?`
         : `Each past final score against ${custom?'your':"tonight's"} ${ou?'total':'line'}: how often would that ${ou?'game':'performance'} have ${ou?`gone ${mk.over?'over':'under'}`:'covered'} this number?`}</div></div>`;
-  const nf = Object.values(GV.f).filter(Boolean).length;
+  const nf = gvNf();
   const filt = `<details class="oxf"${GV.fo?' open':''}><summary class="note">Filters${nf?` <b>(${nf} on)</b>`:''}</summary><div class="oxfg">
       ${GV_FILTERS.map(([k,l,os])=>`<label>${l}<select data-gvf="${k}"><option value="">Any</option>${os.map(([val,t])=>`<option value="${val}"${GV.f[k]===val?' selected':''}>${t}</option>`).join('')}</select></label>`).join('')}
       ${nf?'<button type="button" class="chip" data-gvfc="1">Clear filters</button>':''}</div>
-      <p class="note">Home and away leave out neutral site games. Favorite and underdog use that game's closing line. Opponent tier is that season's final T-Rank (hindsight). Short week is 6 days or fewer, a bye 13 or more. More situations are in Trend Finder.</p></details>`;
+      ${gvOsCtl()}
+      <p class="note">Home and away leave out neutral site games. Favorite and underdog use that game's closing line. Final T-Rank is end of season (hindsight); opponent strength is ranked as of each game. Short week is 6 days or fewer, a bye 13 or more. More situations are in Trend Finder.</p></details>`;
   // matchup context: each side of the ball, from the current ratings
   const t = current && current.byId.get(team), o = current && current.byId.get(opp);
   const cell = (x, key, f) => x && x[key]!=null ? `${f(x[key])} <span class="r">#${x[key+'Rk']}</span>` : '<span class="na">N/A</span>';
@@ -2403,12 +2419,14 @@ function tfQuery(){
   const v = id => $(id).value, n = id => { const x = parseFloat($(id).value); return isNaN(x) ? null : x; };
   const team = teamByName(v('tf-team')), opp = teamByName(v('tf-opp')), y0 = +v('tf-y0'), y1 = +v('tf-y1'), d0 = v('tf-d0'), d1 = v('tf-d1');
   const [s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef] = ['tf-s0','tf-s1','tf-t0','tf-t1','tf-r0','tf-r1','tf-q0','tf-q1','tf-ooff','tf-odef'].map(n);
-  const f = {s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef, site: v('tf-site'), conf: v('tf-conf'), role: v('tf-role'), ork: v('tf-ork'), prev: v('tf-prev'), rest: v('tf-rest'), model: v('tf-model')};
+  const f = {s0,s1,t0,t1,r0,r1,q0,q1,ooff,odef, site: v('tf-site'), conf: v('tf-conf'), role: v('tf-role'), ork: v('tf-ork'), prev: v('tf-prev'), rest: v('tf-rest'), model: v('tf-model'),
+    osSide: v('tf-osSide'), osMet: v('tf-osMet'), osTier: v('tf-osTier'), osBasis: v('tf-osBasis')};
+  { const m = OSM[f.osMet] || OSM.pts; $('tf-osSide').disabled = f.osMet==='r'; $('tf-osBasis').disabled = !(m[4]&&m[5]); if (!m[4]) $('tf-osBasis').value = 'raw'; else if (!m[5]) $('tf-osBasis').value = 'adj'; }
   const rows = tfSides().filter(x=>{
     if (team===-1 || opp===-1) return false; if (team!=null && x.id!==team) return false; if (opp!=null && x.opp!==opp) return false;
     if (x.y<y0 || x.y>y1) return false; if (d0 && x.date<d0) return false; if (d1 && x.date>d1) return false;
     return sideMatch(x, f); });
-  return {rows, team, opp};
+  return {rows, team, opp, f};
 }
 // Situation filters on one tfSides() row, shared by Trend Finder and the game page's hit rate block.
 // Missing or empty fields are skipped. Home and away leave out neutral site games; favorite and underdog use that game's closing line.
@@ -2426,14 +2444,76 @@ function sideMatch(x, f){
     if (prev && x.prev!==prev) return false;
     if (rest==='bye' && !(x.rest!=null && x.rest>=13)) return false; if (rest==='short' && !(x.rest!=null && x.rest<=6)) return false; if (rest==='norm' && !(x.rest!=null && x.rest>=7 && x.rest<=12)) return false;
     if (model==='like' && !(x.modelEdge!=null && x.modelEdge>0)) return false; if (model==='fade' && !(x.modelEdge!=null && x.modelEdge<0)) return false;
+    if (f.osTier){ const os = osResolve(f); if (!osTierOk(osOppRank(x, os), os.tier)) return false; }  // opponent rank on the day of that game
     return true;
 }
+// ---------- Opponent strength at the time of each game (point-in-time ranks) ----------
+// Adjusted: each team's pregame snapshot in DATA.fp (opponent adjusted ridge values, fit only on games before that
+// week). On date d a team's value is its latest snapshot dated on or before d that season, so a bye keeps the previous one.
+// Raw: season to date over FBS vs FBS games strictly before d (points from DATA.games, the rest from the season's
+// play by play rows). Ranked among every FBS team with OS_MIN+ FBS games at that point; rank 1 is best at it. Days
+// with fewer than OS_POOL ranked teams (most of September, the short 2020 season) give no rank, so those games never match.
+// Nothing dated after the game is used. Final season ranks (FINAL) stay a separate, hindsight filter.
+const OS_MIN = 3, OS_POOL = 100;  // a team needs 3+ FBS games; a day's ranks count only once 100+ teams qualify (so Top 25 means top 25 of most of FBS)
+const OS_METRICS = [  // [key, menu label, defense name, offense name, fp column (null: raw only), has raw]
+  ['pts','Scoring','scoring defense','scoring offense','PTS',true],
+  ['epa','EPA/play','EPA/play defense','EPA/play offense','E',true],
+  ['sr','Success rate','success rate defense','success rate offense','SR',true],
+  ['rush','Rushing (EPA/play)','rush defense','rush offense','RE',true],
+  ['pass','Passing (EPA/play)','pass defense','pass offense','PE',true],
+  ['hav','Havoc','havoc forced','havoc allowed (fewest)','HV',true],
+  ['fd','Points per trip','finishing defense','finishing offense','FD',true],
+  ['ex','Explosiveness','explosiveness allowed','explosive offense','EX',true],
+  ['tov','Turnovers','turnovers forced','turnovers committed (fewest)',null,true],
+  ['r','T-Rank rating','T-Rank rating','T-Rank rating','r',false]];
+const OSM = Object.fromEntries(OS_METRICS.map(m=>[m[0], m]));
+const OS_TIERS = [['10','Top 10'],['25','Top 25'],['50','Top 50'],['b25','Bottom 25']];
+// higher is better for offense stats, except havoc allowed and turnovers committed; the reverse for defense
+const osHigh = (met, side) => met==='r' ? true : side==='o' ? !(met==='hav'||met==='tov') : (met==='hav'||met==='tov');
+function osResolve(f){  // the opponent strength filter with its defaults filled in; null when it's off
+  if (!f || !f.osTier) return null;
+  const met = OSM[f.osMet] ? f.osMet : 'pts', m = OSM[met], side = met==='r' ? 'd' : f.osSide==='o' ? 'o' : 'd';
+  let basis = f.osBasis==='raw' ? 'raw' : 'adj'; if (basis==='adj' && !m[4]) basis = 'raw'; if (basis==='raw' && !m[5]) basis = 'adj';
+  const tier = OS_TIERS.find(t=>t[0]===f.osTier) ? f.osTier : '25';
+  return {met, side, basis, tier, name: side==='o' ? m[3] : m[2], tierLbl: OS_TIERS.find(t=>t[0]===tier)[1]}; }
+const osTierOk = (r, tier) => !!r && (tier==='b25' ? r.rkB<=25 : r.rk<=+tier);
+const OSR = new Map();
+function osRanks(met, side, basis){  // Map 'gid:team' -> that team's rank on the day of that game {rk, rkB (from the bottom), n, v, gp}
+  const key = met+'|'+side+'|'+basis; if (OSR.has(key)) return OSR.get(key);
+  const out = new Map(), high = osHigh(met, side), col = OSM[met][4], seasons = new Map();
+  for (const g of DATA.games){ if (g[6]===null) continue; const y = seasonOf(g[1]); if (!seasons.has(y)) seasons.set(y, []); seasons.get(y).push(g); }
+  const rawVal = a => { const q = (x, n) => n>0 ? x/n : null;
+    return met==='pts' ? q(a.pts, a.n) : met==='epa' ? q(a.epa, a.plays) : met==='sr' ? q(a.succ, a.plays) : met==='rush' ? q(a.epa-a.pe, a.plays-a.pp)
+      : met==='pass' ? q(a.pe, a.pp) : met==='hav' ? q(a.hav, a.plays) : met==='fd' ? q(a.tpts, a.trips) : met==='ex' ? q(a.ex, a.pex) : met==='tov' ? q(a.tov, a.n) : null; };
+  for (const [y, gs] of seasons){
+    gs.sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:0);
+    const st = new Map(), rows = new Map();
+    if (basis==='raw' && met!=='pts') for (const r of ((DATA.seasons[y]||{}).rows||[])){ if (!rows.has(r[1])) rows.set(r[1], []); rows.get(r[1]).push(r); }
+    const acc = t => { let a = st.get(t); if (!a){ a = {n:0,pts:0,plays:0,epa:0,succ:0,pp:0,pe:0,tov:0,hav:0,trips:0,tpts:0,ex:0,pex:0}; st.set(t, a); } return a; };
+    for (let i=0; i<gs.length; ){ let j = i; const d = gs[i][1]; while (j<gs.length && gs[j][1]===d) j++; const day = gs.slice(i, j); i = j;
+      if (basis==='adj' && FPX) for (const g of day){ const r = FPX.by.get(g[0]); if (!r) continue;
+        for (const [s,t] of [['h',g[3]],['a',g[4]]]){ const v = FPX.get(r, col==='r' ? s+'_r' : `${s}_${col}_${side}`); if (v!=null) st.set(t, {v, gp: FPX.get(r, s+'_gp') ?? 0}); } }
+      const elig = new Map(); for (const [t, a] of st){ const v0 = basis==='adj' ? a.v : rawVal(a), v = v0==null ? null : Math.round(v0*1e9)/1e9, gp = basis==='adj' ? a.gp : a.n; if (v!=null && isFinite(v) && gp>=OS_MIN) elig.set(t, {v, gp}); }
+      const vs = [...elig.values()].map(e=>e.v).sort((a,b)=>a-b), n = vs.length;
+      const below = v => { let lo=0, hi=n; while (lo<hi){ const m=(lo+hi)>>1; vs[m]<v ? lo=m+1 : hi=m; } return lo; };   // values < v
+      const atMost = v => { let lo=0, hi=n; while (lo<hi){ const m=(lo+hi)>>1; vs[m]<=v ? lo=m+1 : hi=m; } return lo; }; // values <= v
+      if (n>=OS_POOL) for (const g of day) for (const t of [g[3], g[4]]){ const e = elig.get(t); if (!e) continue;
+        const better = high ? n-atMost(e.v) : below(e.v), worse = high ? below(e.v) : n-atMost(e.v);
+        out.set(g[0]+':'+t, {rk: better+1, rkB: worse+1, n, v: e.v, gp: e.gp}); }
+      if (basis==='raw') for (const g of day){   // raw totals only count games before the next date
+        if (met==='pts'){ for (const [t, us, them] of [[g[3],g[6],g[7]],[g[4],g[7],g[6]]]){ const a = acc(t); a.n++; a.pts += side==='d' ? them : us; } continue; }
+        for (const r of rows.get(g[0])||[]){ const a = acc(side==='o' ? r[2] : r[3]);
+          a.n++; a.plays+=r[5]; a.epa+=r[6]; a.succ+=r[7]; a.pp+=r[8]; a.pe+=r[9]; a.tov+=r[10]; a.ex+=r[14]; a.pex+=r[15]; a.hav+=r[16]; a.trips+=r[17]; a.tpts+=r[18]; } }
+    } }
+  OSR.set(key, out); return out; }
+function osOppRank(x, os){ return osRanks(os.met, os.side, os.basis).get(x.gid+':'+x.opp) || null; }
+const osFmt = (r, os) => r ? `#${r.rk} of ${r.n} in ${os.name} that day (${os.basis==='adj'?'adjusted':'raw'}, ${r.gp} FBS games)` : `not ranked that day (under ${OS_MIN} FBS games, fewer than ${OS_POOL} teams ranked yet, or no data)`;
 function tfTeam(id){  // one team's tfSides() rows, oldest first
   if (!TFT){ TFT = new Map(); for (const x of tfSides()){ if (!TFT.has(x.id)) TFT.set(x.id, []); TFT.get(x.id).push(x); } }
   return TFT.get(id) || [];
 }
 function renderTF(){
-  const {rows, team, opp} = tfQuery();
+  const {rows, team, opp, f} = tfQuery();
   const su = rate(rows, x=>x.us-x.them), at = rate(rows.filter(x=>x.cover!=null), x=>x.cover), ou = rate(rows.filter(x=>x.ou!=null), x=>x.ou);
   const md = rate(rows.filter(x=>x.modelEdge!=null && x.modelEdge!==0 && x.cover!=null), x=>x.cover*Math.sign(x.modelEdge));
   const avg = l => l.length ? l.reduce((a,b)=>a+b,0)/l.length : null;
@@ -2449,7 +2529,7 @@ function renderTF(){
     + key('Avg margin','h', naTxt(am, f1), '')
     + key('Avg ATS margin','d', naTxt(aa, f1), 'margin plus spread')
     + key('Model picks','m', md.n?`${md.w}-${md.l}${pc(md)}`:'<span class="na">N/A</span>', md.n?`model side vs the line, pregame, ${ci(md)}`:'');
-  $('tf-note').innerHTML = `Every number above comes from the ${rows.length.toLocaleString()} games listed below. Opponent rank, rating, offense and defense rank and SOS use each season's final T-Rank (season to date for ${SEASONS[SEASONS.length-1]}), so they're hindsight: fine for describing what happened, not proof a pregame strategy works. Model picks only used games before each one. Pushes don't count toward percentages. Break even against the spread at −110 is 52.4%.`;
+  $('tf-note').innerHTML = `Every number above comes from the ${rows.length.toLocaleString()} games listed below. Opponent rank, rating, offense and defense rank and SOS use each season's final T-Rank (season to date for ${SEASONS[SEASONS.length-1]}), so they're hindsight: fine for describing what happened, not proof a pregame strategy works.${(()=>{ const os = osResolve(f); return os ? ` Opp strength (<b>${esc(os.tierLbl)} ${esc(os.name)}</b>, ${os.basis==='adj'?'adjusted':'raw'}) is different: it is point-in-time, the opponent's rank among FBS teams on the day of each game, using only earlier games, and games only count once an opponent has ${OS_MIN}+ FBS games and ${OS_POOL}+ teams are ranked (so most September games drop out).` : ''; })()} Model picks only used games before each one. Pushes don't count toward percentages. Break even against the spread at −110 is 52.4%.`;
   const sorted = [...rows].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
   $('tf-t').querySelector('tbody').innerHTML = sorted.length ? sorted.slice(0, tfShown).map(x=>`<tr>
     <td class="l">${fmtDate(x.date)}</td><td class="l">${teamLinkHtml(x.id)}</td><td class="l">${x.neu?'N':x.home?'H':'A'}</td>
@@ -2464,6 +2544,7 @@ function renderTF(){
 }
 function tfInit(){
   const ys = SEASONS.map(y=>`<option>${y}</option>`).join(''); $('tf-y0').innerHTML = ys; $('tf-y1').innerHTML = ys;
+  $('tf-osMet').innerHTML = OS_METRICS.map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('');
   const reset = () => { $('tff').querySelectorAll('input,select').forEach(el=>{ if (el.tagName==='SELECT') el.selectedIndex=0; else el.value=''; });
     $('tf-y0').value = SEASONS[0]; $('tf-y1').value = SEASONS[SEASONS.length-1]; tfShown = 200; };
   reset();
